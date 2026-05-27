@@ -3,19 +3,56 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
+// introLines is the ASCII art logo shown during the startup animation.
+var introLines = []string{
+	`   ____         ____                                 `,
+	`  / ___| ___   / ___|  ___ _ __ __ _ _ __   ___ _ __ `,
+	" | |  _ / _ \\  \\___ \\ / __| '__/ _" + "`" + " | '_ \\ / _ \\ '__|",
+	` | |_| | (_) |  ___) | (__| | | (_| | |_) |  __/ |   `,
+	`  \____|\___/  |____/ \___|_|  \__,_| .__/ \___|_|   `,
+	`                                    |_|`,
+}
+
+// Characters sampled for the scramble zone — art-like symbols only.
+var introScrChars = []rune(`_/\|-.*+=#@!?~,;:<>[]^()'`)
+
+const (
+	introCharsPerTick = 2  // settled chars revealed per tick
+	introScrambleLen  = 10 // scramble zone width (chars ahead of settled pos)
+	introTickMs       = 8  // ms between ticks
+)
+
+func newIntroScramble() []rune {
+	s := make([]rune, introScrambleLen)
+	for i := range s {
+		s[i] = introScrChars[rand.Intn(len(introScrChars))]
+	}
+	return s
+}
+
+type introTickMsg struct{}
+type introDoneMsg struct{}
+
+func introTick() tea.Cmd {
+	return tea.Tick(time.Duration(introTickMs)*time.Millisecond, func(time.Time) tea.Msg { return introTickMsg{} })
+}
+
 type state int
 
 const (
-	stateConfig   state = iota // first-boot wizard, --setup flag, or Ctrl+S
+	stateIntro    state = iota // startup animation
+	stateConfig                // first-boot wizard, --setup flag, or Ctrl+S
 	stateInput                 // URL input screen
 	stateCrawling              // live crawl progress
 	stateDone                  // summary + file tree
@@ -27,6 +64,11 @@ type model struct {
 	state  state
 	width  int
 	height int
+
+	// intro animation
+	introPos       int    // rune index of the first un-settled character
+	introScramble  []rune // random chars displayed ahead of introPos
+	introNextState state  // state to enter after the animation
 
 	// config wizard
 	config          Config
@@ -76,15 +118,18 @@ func initialModel(url string, setup bool) model {
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 
 	m := model{
-		state:         s,
-		config:        cfg,
-		configBoolVal: cfg.DownloadMedia,
-		firstBoot:     !existed,
-		spinner:       sp,
+		state:          stateIntro,
+		introNextState: s,
+		introScramble:  newIntroScramble(),
+		config:         cfg,
+		configBoolVal:  cfg.DownloadMedia,
+		firstBoot:      !existed,
+		spinner:        sp,
 	}
 
-	// --url: pre-fill input; if config already exists jump straight to crawling
+	// --url: skip the intro and pre-fill the input.
 	if url != "" {
+		m.state = s
 		m.input = url
 		m.inputCursor = len([]rune(url))
 		if !setup && existed {
@@ -96,7 +141,10 @@ func initialModel(url string, setup bool) model {
 }
 
 func (m model) Init() tea.Cmd {
-	if m.state == stateCrawling {
+	switch m.state {
+	case stateIntro:
+		return introTick()
+	case stateCrawling:
 		return tea.Batch(startCrawl(m.input, m.config), m.spinner.Tick)
 	}
 	return nil
@@ -124,6 +172,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch m.state {
+
+		case stateIntro:
+			switch msg.Type {
+			case tea.KeyCtrlQ, tea.KeyCtrlC:
+				m.quitConfirm = true
+			default:
+				// Any other key skips the animation immediately.
+				m.state = m.introNextState
+				if m.state == stateCrawling {
+					return m, tea.Batch(startCrawl(m.input, m.config), m.spinner.Tick)
+				}
+			}
 
 		case stateConfig:
 			switch msg.Type {
@@ -288,6 +348,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyCtrlQ, tea.KeyCtrlC, tea.KeyEsc:
 				m.quitConfirm = true
 			}
+		}
+
+	case introTickMsg:
+		artLen := len([]rune(strings.Join(introLines, "\n")))
+		m.introPos += introCharsPerTick
+		if m.introPos > artLen {
+			m.introPos = artLen
+		}
+		m.introScramble = newIntroScramble() // re-roll scramble every tick
+		if m.introPos >= artLen {
+			m.introScramble = nil
+			return m, tea.Tick(350*time.Millisecond, func(time.Time) tea.Msg { return introDoneMsg{} })
+		}
+		return m, introTick()
+
+	case introDoneMsg:
+		m.state = m.introNextState
+		if m.state == stateCrawling {
+			return m, tea.Batch(startCrawl(m.input, m.config), m.spinner.Tick)
 		}
 
 	case spinner.TickMsg:
@@ -530,10 +609,86 @@ func (m model) View() string {
 	innerHeight := height - 4
 
 	var top strings.Builder
-	top.WriteString(styleTitle.Render("go-scraper"))
-	top.WriteString("\n")
+	if m.state != stateIntro {
+		top.WriteString(styleTitle.Render("go-scraper"))
+		top.WriteString("\n")
+	}
 
 	switch m.state {
+	case stateIntro:
+		artRunes := []rune(strings.Join(introLines, "\n"))
+		total := len(artRunes)
+		pos := m.introPos
+		if pos > total {
+			pos = total
+		}
+		scramEnd := pos + introScrambleLen
+		if scramEnd > total {
+			scramEnd = total
+		}
+
+		// Centering
+		artWidth := 0
+		for _, l := range introLines {
+			if w := len([]rune(strings.TrimRight(l, " "))); w > artWidth {
+				artWidth = w
+			}
+		}
+		margin := (contentWidth - artWidth) / 2
+		if margin < 0 {
+			margin = 0
+		}
+		pad := strings.Repeat(" ", margin)
+
+		// Vertical centering
+		topPad := (innerHeight - len(introLines)) / 2
+		if topPad > 1 {
+			top.WriteString(strings.Repeat("\n", topPad-1))
+		}
+
+		// Render character by character, left to right across each line.
+		// • settled  (< pos):           styleTitle  (real char)
+		// • scramble (pos..scramEnd-1): styleHighlight if non-space (random char),
+		//                               space kept as-is so the art shape is legible
+		// • not yet revealed:           hidden
+		top.WriteString(pad)
+		var seg strings.Builder // accumulates same-style chars before flushing
+		flush := func(style lipgloss.Style) {
+			if seg.Len() > 0 {
+				top.WriteString(style.Render(seg.String()))
+				seg.Reset()
+			}
+		}
+		for i := 0; i < scramEnd; i++ {
+			r := artRunes[i]
+			if r == '\n' {
+				flush(styleTitle)
+				top.WriteString("\n")
+				top.WriteString(pad)
+				continue
+			}
+			if i < pos {
+				seg.WriteRune(r)
+			} else {
+				// entering scramble zone — flush settled segment first
+				flush(styleTitle)
+				if r == ' ' {
+					top.WriteString(" ")
+				} else {
+					si := i - pos
+					var ch rune
+					if si < len(m.introScramble) {
+						ch = m.introScramble[si]
+					} else {
+						ch = r
+					}
+					top.WriteString(styleHighlight.Render(string(ch)))
+				}
+			}
+		}
+		flush(styleTitle)
+		top.WriteString("\n")
+
 	case stateConfig:
 		top.WriteString("\n")
 		m.viewConfig(&top, contentWidth)
@@ -629,6 +784,8 @@ func (m model) View() string {
 // hintBar renders the keybinding footer for the current state.
 func (m model) hintBar(_ int) string {
 	switch m.state {
+	case stateIntro:
+		return hint("Any key", "Skip")
 	case stateConfig:
 		var arrowHint string
 		if m.configStep == 1 {
