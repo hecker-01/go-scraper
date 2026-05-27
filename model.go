@@ -345,6 +345,50 @@ func (m model) viewConfig(b *strings.Builder, contentWidth int) {
 	b.WriteString("\n\n")
 }
 
+// viewDone renders the stateDone screen: the crawled URL, the result line
+// (done / cancelled / error), a clickable folder link, and the file tree
+// (capped to maxTreeLines rows to stay within the visible box).
+func (m model) viewDone(b *strings.Builder, contentWidth, maxTreeLines int) {
+	// URL that was just crawled.
+	b.WriteString(styleDim.Render(truncate(m.input, contentWidth)))
+	b.WriteString("\n\n")
+
+	// Status line - colour changes based on outcome.
+	switch {
+	case strings.HasPrefix(m.errMessage, "Error"):
+		b.WriteString(renderWrap(styleError, m.errMessage, contentWidth))
+	case strings.HasPrefix(m.errMessage, "Cancelled"):
+		b.WriteString(renderWrap(styleDim, m.errMessage, contentWidth))
+	default:
+		b.WriteString(renderWrap(styleSuccess, m.errMessage, contentWidth))
+	}
+
+	// Clickable link to the output folder.
+	outDir := expandHome(m.config.OutputDir)
+	b.WriteString("\n")
+	b.WriteString(styleDim.Render("Saved to: "))
+	b.WriteString(hyperlinkFile(outDir))
+	b.WriteString("\n")
+
+	// File tree - cap lines so it does not overflow the box height.
+	if m.treeOutput != "" {
+		lines := strings.Split(m.treeOutput, "\n")
+		shown := lines
+		hidden := 0
+		if len(lines) > maxTreeLines {
+			shown = lines[:maxTreeLines]
+			hidden = len(lines) - maxTreeLines
+		}
+		b.WriteString("\n")
+		b.WriteString(styleDim.Render(strings.Join(shown, "\n")))
+		if hidden > 0 {
+			b.WriteString("\n")
+			b.WriteString(styleDim.Render(fmt.Sprintf("  ...and %d more", hidden)))
+		}
+		b.WriteString("\n")
+	}
+}
+
 // ─── View ─────────────────────────────────────────────────────────────────────
 
 func (m model) View() string {
@@ -426,7 +470,10 @@ func (m model) View() string {
 		}
 
 	case stateCrawling:
-		top.WriteString(renderWrap(styleDim, "Enter a URL to scrape.", contentWidth))
+		top.WriteString(styleDim.Render(truncate(m.input, contentWidth)))
+		top.WriteString("\n")
+		top.WriteString(styleDim.Render("Saving to: "))
+		top.WriteString(hyperlinkFile(expandHome(m.config.OutputDir)))
 		top.WriteString("\n\n")
 		if m.cancelling {
 			top.WriteString(m.spinner.View())
@@ -450,20 +497,12 @@ func (m model) View() string {
 		writeLog(&top, m.recentLog, contentWidth)
 
 	case stateDone:
-		top.WriteString(renderWrap(styleDim, "Enter a URL to scrape.", contentWidth))
-		top.WriteString("\n\n")
-		switch {
-		case strings.HasPrefix(m.errMessage, "Error"):
-			top.WriteString(renderWrap(styleError, m.errMessage, contentWidth))
-		case strings.HasPrefix(m.errMessage, "Cancelled"):
-			top.WriteString(renderWrap(styleDim, m.errMessage, contentWidth))
-		default:
-			top.WriteString(renderWrap(styleSuccess, m.errMessage, contentWidth))
+		maxTreeLines := height - 16
+		if maxTreeLines < 3 {
+			maxTreeLines = 3
 		}
-		if m.treeOutput != "" {
-			top.WriteString("\n\n")
-			top.WriteString(styleDim.Render(m.treeOutput))
-		}
+		top.WriteString("\n")
+		m.viewDone(&top, contentWidth, maxTreeLines)
 		writeErrors(&top, m.errorLog, contentWidth, maxErrors)
 	}
 

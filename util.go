@@ -72,14 +72,21 @@ func isHTMLContentType(ct string) bool {
 }
 
 // isMediaURL does a quick extension-based check on a URL to decide if it is
-// likely a media file (image, font, audio, video). Used by the Crawler to
-// respect the DownloadMedia setting before even making a request.
+// a non-HTML asset. Used by the Crawler to respect the DownloadMedia setting
+// before even making a request. CSS and JS are included because when
+// download_media is false the user wants only HTML pages.
 func isMediaURL(rawURL string) bool {
 	lower := strings.ToLower(rawURL)
 	mediaExts := []string{
+		// stylesheets and scripts
+		".css", ".js",
+		// images
 		".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".svg",
+		// video / audio
 		".mp4", ".webm", ".mov", ".avi", ".mp3", ".ogg", ".wav",
+		// fonts
 		".woff", ".woff2", ".ttf", ".otf", ".eot",
+		// archives / documents
 		".pdf", ".zip",
 	}
 	for _, ext := range mediaExts {
@@ -101,12 +108,14 @@ func isMediaContent(contentType string) bool {
 		!strings.HasPrefix(ct, "application/xhtml")
 }
 
-// extractDomain returns the hostname from rawURL, or an empty string on error.
-// Used by the crawler to track domain hops for the domain_depth config.
+// extractDomain returns the host (including port if non-standard) from rawURL,
+// or an empty string on error. Including the port means that two servers on
+// different ports of the same IP are treated as different domains - which is
+// the correct behaviour both for testing and for real multi-port deployments.
 func extractDomain(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return ""
 	}
-	return u.Hostname()
+	return u.Host // includes port when explicitly present in the URL
 }

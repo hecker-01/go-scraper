@@ -157,6 +157,15 @@ func (c *Crawler) processURL(ctx context.Context, item queueItem, ch chan<- tea.
 		return nil, err
 	}
 
+	// Post-download content-type guard: the URL-based pre-check above catches
+	// obvious assets by extension, but some servers serve CSS/JS at clean URLs
+	// with no extension. Delete the file and bail if download_media is off and
+	// the response was not an HTML page.
+	if !c.cfg.DownloadMedia && isMediaContent(result.ContentType) {
+		os.Remove(result.Path)
+		return nil, nil
+	}
+
 	// Record the URL -> local path mapping for the link rewriter.
 	c.savedPaths[normaliseURL(item.url)] = result.Path
 

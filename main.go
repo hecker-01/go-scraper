@@ -8,10 +8,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const version = "1.0.0"
+
 func main() {
-	url := flag.String("url", "", "URL to scrape (optional - can also be entered in the TUI)")
-	setup := flag.Bool("setup", false, "Open the config wizard")
+	url     := flag.String("url", "", "URL to scrape (optional - can also be entered in the TUI)")
+	setup   := flag.Bool("setup", false, "Open the config wizard")
+	ver     := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *ver {
+		fmt.Println("go-scraper v" + version)
+		return
+	}
 
 	m := initialModel(*url, *setup)
 	p := tea.NewProgram(m, tea.WithAltScreen())

@@ -82,6 +82,7 @@ func (d *Downloader) Download(ctx context.Context, rawURL string) (DownloadResul
 	if err != nil {
 		return DownloadResult{}, fmt.Errorf("building request for %s: %w", rawURL, err)
 	}
+	req.Header.Set("User-Agent", "go-scraper/1.0 (+https://github.com/hecker-01/go-scraper)")
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return DownloadResult{}, fmt.Errorf("GET %s: %w", rawURL, err)

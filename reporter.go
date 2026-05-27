@@ -23,14 +23,16 @@ func NewReporter(outputDir string) *Reporter {
 //   - a tree-style string (like the Linux `tree` command) of every saved file
 //   - the total bytes across all files
 //   - any error encountered while walking
+//
+// Returns empty strings with no error when outputDir does not exist yet
+// (e.g. the crawl was cancelled before a single file was saved).
 func (r *Reporter) Build() (tree string, totalBytes int64, err error) {
-	// TODO (Phase 8): implement tree walk
-	// - filepath.WalkDir(r.outputDir, ...)
-	// - accumulate sizes with fi.Size()
-	// - build tree string using box-drawing characters
-	//   (not dashes - use  |, L, └, ├, │ etc.)
-	_ = r.outputDir
-	return "", 0, nil
+	if _, statErr := os.Stat(r.outputDir); os.IsNotExist(statErr) {
+		return "", 0, nil
+	}
+	tree = r.treeString()
+	totalBytes, err = r.sumBytes(r.outputDir)
+	return
 }
 
 // treeLines is a helper for building the tree string recursively.
@@ -74,10 +76,11 @@ func (r *Reporter) sumBytes(dir string) (int64, error) {
 	return total, err
 }
 
-// treeString builds the full tree string for outputDir.
+// treeString builds the tree string for the contents of outputDir.
+// The root directory line is omitted because the done-screen already shows it
+// as a clickable "Saved to:" link - no need to repeat the full path.
 func (r *Reporter) treeString() string {
 	var lines []string
-	lines = append(lines, r.outputDir)
 	_ = r.treeLines(r.outputDir, "", &lines)
 	return strings.Join(lines, "\n")
 }
