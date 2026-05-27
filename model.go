@@ -32,13 +32,15 @@ type model struct {
 	config          Config
 	configStep      int
 	configInput     string
+	configCursor    int  // rune index of the insertion point in configInput
 	configBoolVal   bool // selection state for boolean steps (step 1)
 	firstBoot       bool
 	configSavedPath string
 
 	// input screen
-	input      string
-	errMessage string
+	input       string
+	inputCursor int // rune index of the insertion point in input
+	errMessage  string
 
 	// crawling
 	spinner     spinner.Model
@@ -84,6 +86,7 @@ func initialModel(url string, setup bool) model {
 	// --url: pre-fill input; if config already exists jump straight to crawling
 	if url != "" {
 		m.input = url
+		m.inputCursor = len([]rune(url))
 		if !setup && existed {
 			m.state = stateCrawling
 		}
@@ -132,19 +135,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = stateInput
 					m.configStep = 0
 					m.configInput = ""
+					m.configCursor = 0
 				}
-			case tea.KeyLeft, tea.KeyRight, tea.KeyUp, tea.KeyDown:
+			case tea.KeyLeft:
+				if m.configStep == 1 {
+					m.configBoolVal = !m.configBoolVal
+				} else if m.configCursor > 0 {
+					m.configCursor--
+				}
+			case tea.KeyRight:
+				if m.configStep == 1 {
+					m.configBoolVal = !m.configBoolVal
+				} else if m.configCursor < len([]rune(m.configInput)) {
+					m.configCursor++
+				}
+			case tea.KeyUp, tea.KeyDown:
 				if m.configStep == 1 {
 					m.configBoolVal = !m.configBoolVal
 				}
-			case tea.KeyBackspace, tea.KeyDelete:
-				if len(m.configInput) > 0 {
-					m.configInput = m.configInput[:len(m.configInput)-1]
+			case tea.KeyHome, tea.KeyCtrlA:
+				m.configCursor = 0
+			case tea.KeyEnd, tea.KeyCtrlE:
+				m.configCursor = len([]rune(m.configInput))
+			case tea.KeyBackspace:
+				runes := []rune(m.configInput)
+				if m.configCursor > 0 {
+					m.configInput = string(append(runes[:m.configCursor-1:m.configCursor-1], runes[m.configCursor:]...))
+					m.configCursor--
+				}
+			case tea.KeyDelete:
+				runes := []rune(m.configInput)
+				if m.configCursor < len(runes) {
+					m.configInput = string(append(runes[:m.configCursor:m.configCursor], runes[m.configCursor+1:]...))
 				}
 			case tea.KeyEnter:
 				m.applyConfigStep()
 				m.configStep++
 				m.configInput = ""
+				m.configCursor = 0
 				if m.configStep >= numConfigSteps {
 					path, _ := m.config.FilePath()
 					_ = m.config.Save()
@@ -155,16 +183,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			default:
 				if msg.Type == tea.KeyRunes {
-					if m.configStep >= 2 {
+					runes := []rune(m.configInput)
+					for _, r := range msg.Runes {
 						// Numeric steps: only accept digit characters.
-						for _, r := range msg.Runes {
-							if r >= '0' && r <= '9' {
-								m.configInput += string(r)
-							}
+						if m.configStep >= 2 && (r < '0' || r > '9') {
+							continue
 						}
-					} else {
-						m.configInput += string(msg.Runes)
+						runes = append(runes[:m.configCursor:m.configCursor], append([]rune{r}, runes[m.configCursor:]...)...)
+						m.configCursor++
 					}
+					m.configInput = string(runes)
 				}
 			}
 
@@ -176,8 +204,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateConfig
 				m.configStep = 0
 				m.configInput = ""
+				m.configCursor = 0
 				m.configBoolVal = m.config.DownloadMedia
 				m.configSavedPath = ""
+			case tea.KeyLeft:
+				if m.inputCursor > 0 {
+					m.inputCursor--
+				}
+			case tea.KeyRight:
+				if m.inputCursor < len([]rune(m.input)) {
+					m.inputCursor++
+				}
+			case tea.KeyHome, tea.KeyCtrlA:
+				m.inputCursor = 0
+			case tea.KeyEnd, tea.KeyCtrlE:
+				m.inputCursor = len([]rune(m.input))
+			case tea.KeyBackspace:
+				runes := []rune(m.input)
+				if m.inputCursor > 0 {
+					m.input = string(append(runes[:m.inputCursor-1:m.inputCursor-1], runes[m.inputCursor:]...))
+					m.inputCursor--
+				}
+			case tea.KeyDelete:
+				runes := []rune(m.input)
+				if m.inputCursor < len(runes) {
+					m.input = string(append(runes[:m.inputCursor:m.inputCursor], runes[m.inputCursor+1:]...))
+				}
 			case tea.KeyEnter:
 				url := strings.TrimSpace(m.input)
 				if !isValidURL(url) {
@@ -194,13 +246,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.lastFile = ""
 				m.cancelling = false
 				return m, tea.Batch(startCrawl(url, m.config), m.spinner.Tick)
-			case tea.KeyBackspace, tea.KeyDelete:
-				if len(m.input) > 0 {
-					m.input = m.input[:len(m.input)-1]
-				}
 			default:
 				if msg.Type == tea.KeyRunes {
-					m.input += string(msg.Runes)
+					runes := []rune(m.input)
+					for _, r := range msg.Runes {
+						runes = append(runes[:m.inputCursor:m.inputCursor], append([]rune{r}, runes[m.inputCursor:]...)...)
+						m.inputCursor++
+					}
+					m.input = string(runes)
 				}
 			}
 
@@ -220,6 +273,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEnter:
 				m.state = stateInput
 				m.input = ""
+				m.inputCursor = 0
 				m.errMessage = ""
 				m.recentLog = nil
 				m.errorLog = nil
@@ -228,6 +282,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateConfig
 				m.configStep = 0
 				m.configInput = ""
+				m.configCursor = 0
 				m.configBoolVal = m.config.DownloadMedia
 				m.configSavedPath = ""
 			case tea.KeyCtrlQ, tea.KeyCtrlC, tea.KeyEsc:
@@ -368,9 +423,13 @@ func (m model) viewConfig(b *strings.Builder, contentWidth int) {
 		b.WriteString(falseStyle.Render("false"))
 		b.WriteString("\n\n")
 	} else {
+		runes := []rune(m.configInput)
+		before := string(runes[:m.configCursor])
+		after := string(runes[m.configCursor:])
 		b.WriteString(styleDim.Render("New value (empty = keep current): "))
-		b.WriteString(styleInput.Render(m.configInput))
+		b.WriteString(styleInput.Render(before))
 		b.WriteString(styleInput.Render("█"))
+		b.WriteString(styleInput.Render(after))
 		b.WriteString("\n\n")
 	}
 }
@@ -483,9 +542,11 @@ func (m model) View() string {
 			top.WriteString(hyperlinkFile(m.configSavedPath))
 			top.WriteString("\n\n")
 		}
+		inputRunes := []rune(m.input)
 		top.WriteString(stylePrompt.Render("-> "))
-		top.WriteString(styleInput.Render(m.input))
+		top.WriteString(styleInput.Render(string(inputRunes[:m.inputCursor])))
 		top.WriteString(styleInput.Render("█"))
+		top.WriteString(styleInput.Render(string(inputRunes[m.inputCursor:])))
 		top.WriteString("\n")
 		if isValidURL(m.input) {
 			dest := expandHome(m.config.OutputDir)
