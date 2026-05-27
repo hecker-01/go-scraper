@@ -1,0 +1,4 @@
+go-scraper
+go-scraper.exe
+output/
+*.toml.bak
