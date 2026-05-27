@@ -425,10 +425,14 @@ func (m model) viewConfig(b *strings.Builder, contentWidth int) {
 	} else {
 		runes := []rune(m.configInput)
 		before := string(runes[:m.configCursor])
-		after := string(runes[m.configCursor:])
+		cursorCh, after := " ", ""
+		if m.configCursor < len(runes) {
+			cursorCh = string(runes[m.configCursor])
+			after = string(runes[m.configCursor+1:])
+		}
 		b.WriteString(styleDim.Render("New value (empty = keep current): "))
 		b.WriteString(styleInput.Render(before))
-		b.WriteString(styleInput.Render("█"))
+		b.WriteString(styleCursor.Render(cursorCh))
 		b.WriteString(styleInput.Render(after))
 		b.WriteString("\n\n")
 	}
@@ -543,10 +547,16 @@ func (m model) View() string {
 			top.WriteString("\n\n")
 		}
 		inputRunes := []rune(m.input)
+		inputBefore := string(inputRunes[:m.inputCursor])
+		inputCursorCh, inputAfter := " ", ""
+		if m.inputCursor < len(inputRunes) {
+			inputCursorCh = string(inputRunes[m.inputCursor])
+			inputAfter = string(inputRunes[m.inputCursor+1:])
+		}
 		top.WriteString(stylePrompt.Render("-> "))
-		top.WriteString(styleInput.Render(string(inputRunes[:m.inputCursor])))
-		top.WriteString(styleInput.Render("█"))
-		top.WriteString(styleInput.Render(string(inputRunes[m.inputCursor:])))
+		top.WriteString(styleInput.Render(inputBefore))
+		top.WriteString(styleCursor.Render(inputCursorCh))
+		top.WriteString(styleInput.Render(inputAfter))
 		top.WriteString("\n")
 		if isValidURL(m.input) {
 			dest := expandHome(m.config.OutputDir)

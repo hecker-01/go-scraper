@@ -35,6 +35,9 @@ var (
 	styleHighlight = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("3"))
+
+	// styleCursor renders the character under the block cursor with inverted colours.
+	styleCursor = lipgloss.NewStyle().Reverse(true)
 )
 
 // hyperlinkFile wraps path in an OSC 8 terminal hyperlink (file:// URL),
