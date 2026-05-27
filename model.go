@@ -14,6 +14,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// miniLines is the compact ASCII art used as the header on every non-intro screen.
+var miniLines = []string{
+	`┏━╸┏━┓   ┏━┓┏━╸┏━┓┏━┓┏━┓┏━╸┏━┓`,
+	`┃╺┓┃ ┃╺━╸┗━┓┃  ┣┳┛┣━┫┣━┛┣╸ ┣┳┛`,
+	`┗━┛┗━┛   ┗━┛┗━╸╹┗╸╹ ╹╹  ┗━╸╹┗╸`,
+}
+
 // introLines is the ASCII art logo shown during the startup animation.
 var introLines = []string{
 	`   ____         ____                                 `,
@@ -42,6 +49,7 @@ func newIntroScramble() []rune {
 }
 
 type introTickMsg struct{}
+type introTaglineMsg struct{}
 type introDoneMsg struct{}
 
 func introTick() tea.Cmd {
@@ -66,9 +74,10 @@ type model struct {
 	height int
 
 	// intro animation
-	introPos       int    // rune index of the first un-settled character
-	introScramble  []rune // random chars displayed ahead of introPos
-	introNextState state  // state to enter after the animation
+	introPos         int    // rune index of the first un-settled character
+	introScramble    []rune // random chars displayed ahead of introPos
+	introShowTagline bool   // whether the "By heckr.dev · vX" line is visible
+	introNextState   state  // state to enter after the animation
 
 	// config wizard
 	config          Config
@@ -127,13 +136,15 @@ func initialModel(url string, setup bool) model {
 		spinner:        sp,
 	}
 
-	// --url: skip the intro and pre-fill the input.
-	if url != "" {
+	// Skip the intro whenever any CLI flag is supplied.
+	if url != "" || setup {
 		m.state = s
-		m.input = url
-		m.inputCursor = len([]rune(url))
-		if !setup && existed {
-			m.state = stateCrawling
+		if url != "" {
+			m.input = url
+			m.inputCursor = len([]rune(url))
+			if !setup && existed {
+				m.state = stateCrawling
+			}
 		}
 	}
 
@@ -356,12 +367,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.introPos > artLen {
 			m.introPos = artLen
 		}
-		m.introScramble = newIntroScramble() // re-roll scramble every tick
+		m.introScramble = newIntroScramble()
 		if m.introPos >= artLen {
 			m.introScramble = nil
-			return m, tea.Tick(350*time.Millisecond, func(time.Time) tea.Msg { return introDoneMsg{} })
+			// Short pause, then reveal the tagline.
+			return m, tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return introTaglineMsg{} })
 		}
 		return m, introTick()
+
+	case introTaglineMsg:
+		m.introShowTagline = true
+		// Hold the complete intro for a moment before transitioning.
+		return m, tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg { return introDoneMsg{} })
 
 	case introDoneMsg:
 		m.state = m.introNextState
@@ -594,9 +611,25 @@ func (m model) View() string {
 	if contentWidth < 20 {
 		contentWidth = 20
 	}
-	maxErrors := height - 15
+
+	// innerHeight = screen height minus border (2 rows) and padding (2 rows).
+	innerHeight := height - 4
+
+	// Budget rows that can be consumed by variable-height sections (tree + errors).
+	// Fixed overhead in the done state: mini header + URL/blank/done/saved/
+	// tree-blank-before/tree-blank-after/errors-blank-blank = headerH + 9.
+	headerH := len(miniLines)
+	avail := innerHeight - headerH - 9
+	if avail < 4 {
+		avail = 4
+	}
+	maxErrors := avail * 2 / 5
 	if maxErrors < 1 {
 		maxErrors = 1
+	}
+	maxTreeLines := avail - maxErrors
+	if maxTreeLines < 3 {
+		maxTreeLines = 3
 	}
 
 	border := lipgloss.NewStyle().
@@ -605,13 +638,12 @@ func (m model) View() string {
 		Padding(1, 2).
 		Width(contentWidth + 4)
 
-	// innerHeight = screen height minus border (2 rows) and padding (2 rows).
-	innerHeight := height - 4
-
 	var top strings.Builder
 	if m.state != stateIntro {
-		top.WriteString(styleTitle.Render("go-scraper"))
-		top.WriteString("\n")
+		for _, line := range miniLines {
+			top.WriteString(styleTitle.Render(line))
+			top.WriteString("\n")
+		}
 	}
 
 	switch m.state {
@@ -689,6 +721,20 @@ func (m model) View() string {
 		flush(styleTitle)
 		top.WriteString("\n")
 
+		if m.introShowTagline {
+			plain := "By heckr.dev  ·  v" + version
+			tMargin := (contentWidth - len([]rune(plain))) / 2
+			if tMargin < 0 {
+				tMargin = 0
+			}
+			top.WriteString("\n")
+			top.WriteString(strings.Repeat(" ", tMargin))
+			top.WriteString(styleDim.Render("By "))
+			top.WriteString(stylePrompt.Render("heckr.dev"))
+			top.WriteString(styleDim.Render("  ·  v" + version))
+			top.WriteString("\n")
+		}
+
 	case stateConfig:
 		top.WriteString("\n")
 		m.viewConfig(&top, contentWidth)
@@ -753,10 +799,6 @@ func (m model) View() string {
 		writeLog(&top, m.recentLog, contentWidth)
 
 	case stateDone:
-		maxTreeLines := height - 16
-		if maxTreeLines < 3 {
-			maxTreeLines = 3
-		}
 		top.WriteString("\n")
 		m.viewDone(&top, contentWidth, maxTreeLines)
 		writeErrors(&top, m.errorLog, contentWidth, maxErrors)

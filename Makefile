@@ -1,7 +1,15 @@
 .PHONY: build run test lint clean
 
+ifeq ($(OS),Windows_NT)
+EXT=.exe
+else
+EXT=
+endif
+
+BUILD_NAME=go-scraper
+
 build:
-	go build -o go-scraper .
+	go build -o $(BUILD_NAME)$(EXT) .
 
 run:
 	go run .
@@ -14,4 +22,4 @@ lint:
 
 clean:
 	go clean ./...
-	rm -f go-scraper
+	rm -f $(BUILD_NAME) $(BUILD_NAME)$(EXT)

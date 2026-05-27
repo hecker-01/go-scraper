@@ -198,11 +198,11 @@ func TestURLToLocalPath(t *testing.T) {
 		ct   string
 		want string // uses filepath.Join so separators are OS-correct
 	}{
-		// Root of site -> host/host.html
+		// Root of site -> host/index.html
 		{
 			"https://example.com/",
 			"text/html",
-			filepath.Join("example.com", "example.com.html"),
+			filepath.Join("example.com", "index.html"),
 		},
 		// Extension-less path -> append extension from Content-Type
 		{
@@ -215,11 +215,11 @@ func TestURLToLocalPath(t *testing.T) {
 			"application/json",
 			filepath.Join("example.com", "api", "data.json"),
 		},
-		// Trailing slash -> _page.html to avoid directory collision
+		// Trailing slash -> index.html inside the directory
 		{
 			"https://example.com/about/",
 			"text/html",
-			filepath.Join("example.com", "about", "_page.html"),
+			filepath.Join("example.com", "about", "index.html"),
 		},
 		// Has extension -> keep as-is
 		{

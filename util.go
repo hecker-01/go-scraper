@@ -97,6 +97,11 @@ func isMediaURL(rawURL string) bool {
 	return false
 }
 
+// isJSContentType returns true when the content-type indicates a JavaScript file.
+func isJSContentType(ct string) bool {
+	return strings.Contains(normaliseContentType(ct), "javascript")
+}
+
 // isMediaContent returns true for any content-type that is not an HTML page.
 // Used to decide whether the size cap (MaxMediaSizeMB) applies to a download.
 // HTML is always fetched regardless of size because it is the content we

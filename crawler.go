@@ -6,11 +6,17 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"golang.org/x/net/html"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// jsURLRe matches single- or double-quoted strings in JS that look like
+// absolute URLs or relative paths (starting with /, ./ or ../).
+// A subsequent isMediaURL filter keeps only asset references.
+var jsURLRe = regexp.MustCompile(`["'](https?://[^"'\s<>]+|\.{0,2}/[^"'\s<>\\]+)["']`)
 
 // ─── Crawler ──────────────────────────────────────────────────────────────────
 
@@ -173,6 +179,9 @@ func (c *Crawler) processURL(ctx context.Context, item queueItem, ch chan<- tea.
 	ch <- logLineMsg{line: result.Path, level: slog.LevelInfo}
 
 	if !isHTMLContentType(result.ContentType) {
+		if isJSContentType(result.ContentType) {
+			return c.extractLinksFromJS(result.Path, item.url, item.pageDepth, item.domainHops)
+		}
 		return nil, nil
 	}
 
@@ -272,6 +281,53 @@ func (c *Crawler) linksFromNode(n *html.Node) []string {
 	}
 
 	return urls
+}
+
+// ─── extractLinksFromJS ───────────────────────────────────────────────────────
+
+// extractLinksFromJS scans a saved JS file for asset URLs embedded in string
+// literals (images, fonts, CSS, other JS files, etc.) and returns them as new
+// queue items so they are downloaded during the same crawl.
+func (c *Crawler) extractLinksFromJS(jsPath, jsURL string, pageDepth, domainHops int) ([]queueItem, error) {
+	data, err := os.ReadFile(jsPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading JS %s: %w", jsPath, err)
+	}
+	base, err := url.Parse(jsURL)
+	if err != nil {
+		return nil, fmt.Errorf("parsing JS base URL %s: %w", jsURL, err)
+	}
+
+	seen := make(map[string]bool)
+	var items []queueItem
+
+	for _, match := range jsURLRe.FindAllSubmatch(data, -1) {
+		candidate := string(match[1])
+		// Only follow strings that look like asset URLs (by extension).
+		if !isMediaURL(candidate) {
+			continue
+		}
+		abs, err := resolveURL(base, candidate)
+		if err != nil || abs == "" {
+			continue
+		}
+		norm := normaliseURL(abs)
+		if norm == "" || seen[norm] || c.visited[norm] {
+			continue
+		}
+		seen[norm] = true
+
+		hops := domainHops
+		if extractDomain(norm) != c.startDomain {
+			hops++
+		}
+		items = append(items, queueItem{
+			url:        norm,
+			pageDepth:  pageDepth + 1,
+			domainHops: hops,
+		})
+	}
+	return items, nil
 }
 
 // ─── rewriteAllHTML ───────────────────────────────────────────────────────────

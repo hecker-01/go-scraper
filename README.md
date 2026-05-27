@@ -145,16 +145,16 @@ Files are saved under `output_dir`, mirroring the URL path structure. Extensions
 
 | URL | Content-Type | Saved as |
 |-----|-------------|----------|
-| `example.com/` | `text/html` | `example.com/example.com.html` |
+| `example.com/` | `text/html` | `example.com/index.html` |
 | `example.com/about` | `text/html` | `example.com/about.html` |
-| `example.com/about/` | `text/html` | `example.com/about/_page.html` |
+| `example.com/about/` | `text/html` | `example.com/about/index.html` |
 | `example.com/style.css` | `text/css` | `example.com/style.css` |
 | `example.com/img/logo.png` | `image/png` | `example.com/img/logo.png` |
 | `example.com/api/data` | `application/json` | `example.com/api/data.json` |
 
 Key decisions:
-- No `index.html` defaults - the filename always reflects what the server actually sent.
-- Trailing-slash URLs use `_page.html` to avoid colliding with files inside the same directory.
+- Trailing-slash URLs (including root `/`) are saved as `index.html` inside the directory, matching how real web servers work.
+- Extension-less paths get their extension from the `Content-Type` response header, never guessed from the URL.
 - Query strings and fragments are stripped (they do not map to files on disk).
 
 ---

@@ -17,7 +17,7 @@ import (
 // when saving the file. Query strings and fragments are stripped because they
 // do not map to files on disk.
 //
-// Path naming rules (no blind index.html defaults):
+// Path naming rules:
 //
 //   - Has a file extension (e.g. style.css, logo.png, page.html)
 //     -> saved as-is under the host directory
@@ -26,18 +26,14 @@ import (
 //     -> extension derived from contentType (e.g. /about + text/html -> about.html)
 //     -> if contentType is unknown or unrecognised, saved with no extension
 //
-//   - Explicit trailing slash (e.g. /docs/, /blog/)
-//     -> server is signalling "directory"; saved as <dir>/_page.html to avoid
-//        colliding with files inside that directory
-//
-//   - Root path /
-//     -> saved as <host>.html (e.g. example.com.html)
+//   - Explicit trailing slash (e.g. /docs/, /blog/) or root /
+//     -> server is signalling "directory"; saved as index.html inside that directory
 //
 // Examples:
 //
-//	"https://example.com/"             ct="text/html"  -> "example.com/example.com.html"
+//	"https://example.com/"             ct="text/html"  -> "example.com/index.html"
 //	"https://example.com/about"        ct="text/html"  -> "example.com/about.html"
-//	"https://example.com/about/"       ct="text/html"  -> "example.com/about/_page.html"
+//	"https://example.com/about/"       ct="text/html"  -> "example.com/about/index.html"
 //	"https://example.com/style.css"    ct="text/css"   -> "example.com/style.css"
 //	"https://example.com/img/logo.png" ct="image/png"  -> "example.com/img/logo.png"
 //	"https://example.com/api/data"     ct="application/json" -> "example.com/api/data.json"
@@ -58,18 +54,14 @@ func URLToLocalPath(rawURL, contentType string) (string, error) {
 
 	var localPath string
 	switch {
-	case p == "/":
-		// Root of the site - name after the hostname so it is unique on disk.
-		localPath = filepath.Join(u.Host, u.Host+".html")
+	case p == "/" || trailingSlash:
+		// Root or explicit directory URL - save as index.html inside the directory,
+		// matching what a real web server would serve.
+		localPath = filepath.Join(u.Host, filepath.FromSlash(p), "index.html")
 
-	case hasExt && !trailingSlash:
+	case hasExt:
 		// Real file - keep the extension the server chose.
 		localPath = filepath.Join(u.Host, filepath.FromSlash(p))
-
-	case trailingSlash:
-		// Explicit directory URL - use _page.html inside the directory so
-		// it does not conflict with any file that lives there.
-		localPath = filepath.Join(u.Host, filepath.FromSlash(p), "_page.html")
 
 	default:
 		// No extension, no trailing slash - derive extension from Content-Type
