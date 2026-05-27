@@ -50,12 +50,12 @@ func parseBool(s string, fallback bool) bool {
 	return fallback
 }
 
-// boolToYesNo returns "yes" or "no" for display in the config wizard.
-func boolToYesNo(b bool) string {
+// boolToStr returns "true" or "false" for display in the config wizard.
+func boolToStr(b bool) string {
 	if b {
-		return "yes"
+		return "true"
 	}
-	return "no"
+	return "false"
 }
 
 // normaliseContentType strips parameters from a Content-Type header value and

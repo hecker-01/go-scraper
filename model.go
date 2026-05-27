@@ -32,6 +32,7 @@ type model struct {
 	config          Config
 	configStep      int
 	configInput     string
+	configBoolVal   bool // selection state for boolean steps (step 1)
 	firstBoot       bool
 	configSavedPath string
 
@@ -73,10 +74,11 @@ func initialModel(url string, setup bool) model {
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 
 	m := model{
-		state:     s,
-		config:    cfg,
-		firstBoot: !existed,
-		spinner:   sp,
+		state:         s,
+		config:        cfg,
+		configBoolVal: cfg.DownloadMedia,
+		firstBoot:     !existed,
+		spinner:       sp,
 	}
 
 	// --url: pre-fill input; if config already exists jump straight to crawling
@@ -131,6 +133,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.configStep = 0
 					m.configInput = ""
 				}
+			case tea.KeyLeft, tea.KeyRight, tea.KeyUp, tea.KeyDown:
+				if m.configStep == 1 {
+					m.configBoolVal = !m.configBoolVal
+				}
 			case tea.KeyBackspace, tea.KeyDelete:
 				if len(m.configInput) > 0 {
 					m.configInput = m.configInput[:len(m.configInput)-1]
@@ -149,7 +155,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			default:
 				if msg.Type == tea.KeyRunes {
-					m.configInput += string(msg.Runes)
+					if m.configStep >= 2 {
+						// Numeric steps: only accept digit characters.
+						for _, r := range msg.Runes {
+							if r >= '0' && r <= '9' {
+								m.configInput += string(r)
+							}
+						}
+					} else {
+						m.configInput += string(msg.Runes)
+					}
 				}
 			}
 
@@ -161,6 +176,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateConfig
 				m.configStep = 0
 				m.configInput = ""
+				m.configBoolVal = m.config.DownloadMedia
 				m.configSavedPath = ""
 			case tea.KeyEnter:
 				url := strings.TrimSpace(m.input)
@@ -212,6 +228,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateConfig
 				m.configStep = 0
 				m.configInput = ""
+				m.configBoolVal = m.config.DownloadMedia
 				m.configSavedPath = ""
 			case tea.KeyCtrlQ, tea.KeyCtrlC, tea.KeyEsc:
 				m.quitConfirm = true
@@ -282,7 +299,7 @@ func (m model) configFieldInfo() (label, current, fieldHint string) {
 	case 0:
 		return "Output directory", m.config.OutputDir, ""
 	case 1:
-		return "Download media (images, CSS, JS, fonts)", boolToYesNo(m.config.DownloadMedia), "yes / no"
+		return "Download media (images, CSS, JS, fonts)", boolToStr(m.config.DownloadMedia), ""
 	case 2:
 		return "Max media file size in MB", strconv.Itoa(m.config.MaxMediaSizeMB), "0 = no cap"
 	case 3:
@@ -303,9 +320,7 @@ func (m *model) applyConfigStep() {
 			m.config.OutputDir = v
 		}
 	case 1:
-		if v != "" {
-			m.config.DownloadMedia = parseBool(v, m.config.DownloadMedia)
-		}
+		m.config.DownloadMedia = m.configBoolVal
 	case 2:
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			m.config.MaxMediaSizeMB = n
@@ -339,10 +354,25 @@ func (m model) viewConfig(b *strings.Builder, contentWidth int) {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(styleDim.Render("New value (empty = keep current): "))
-	b.WriteString(styleInput.Render(m.configInput))
-	b.WriteString(styleInput.Render("█"))
-	b.WriteString("\n\n")
+	if m.configStep == 1 {
+		// Boolean selector — navigate with ← / →.
+		trueStyle := styleDim
+		falseStyle := styleDim
+		if m.configBoolVal {
+			trueStyle = stylePrompt
+		} else {
+			falseStyle = stylePrompt
+		}
+		b.WriteString(trueStyle.Render("true"))
+		b.WriteString(styleDim.Render("  /  "))
+		b.WriteString(falseStyle.Render("false"))
+		b.WriteString("\n\n")
+	} else {
+		b.WriteString(styleDim.Render("New value (empty = keep current): "))
+		b.WriteString(styleInput.Render(m.configInput))
+		b.WriteString(styleInput.Render("█"))
+		b.WriteString("\n\n")
+	}
 }
 
 // viewDone renders the stateDone screen: the crawled URL, the result line
@@ -529,10 +559,14 @@ func (m model) View() string {
 func (m model) hintBar(_ int) string {
 	switch m.state {
 	case stateConfig:
-		if m.firstBoot {
-			return hint("Ctrl+Q", "Quit")
+		var arrowHint string
+		if m.configStep == 1 {
+			arrowHint = hint("← →", "Toggle") + "   "
 		}
-		return hint("Esc", "Cancel") + "   " + hint("Ctrl+Q", "Quit")
+		if m.firstBoot {
+			return arrowHint + hint("Ctrl+Q", "Quit")
+		}
+		return arrowHint + hint("Esc", "Cancel") + "   " + hint("Ctrl+Q", "Quit")
 	case stateInput:
 		return hint("Enter", "Crawl") + "   " + hint("Ctrl+S", "Configure") + "   " + hint("Ctrl+Q", "Quit")
 	case stateCrawling:
