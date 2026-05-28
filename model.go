@@ -107,6 +107,7 @@ type model struct {
 
 	// done
 	treeOutput string
+	treeScroll int // index of the first visible tree line
 
 	// overlays
 	quitConfirm bool
@@ -345,6 +346,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case stateDone:
 			switch msg.Type {
+			case tea.KeyUp:
+				if m.treeScroll > 0 {
+					m.treeScroll--
+				}
+			case tea.KeyDown:
+				m.treeScroll++
 			case tea.KeyEnter:
 				m.state = stateInput
 				m.input = ""
@@ -353,6 +360,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.recentLog = nil
 				m.errorLog = nil
 				m.treeOutput = ""
+				m.treeScroll = 0
 			case tea.KeyCtrlS:
 				m.state = stateConfig
 				m.configStep = 0
@@ -360,8 +368,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.configCursor = 0
 				m.configBoolVal = m.config.DownloadMedia
 				m.configSavedPath = ""
+				m.treeScroll = 0
 			case tea.KeyCtrlQ, tea.KeyCtrlC, tea.KeyEsc:
 				m.quitConfirm = true
+			}
+		}
+
+	case tea.MouseMsg:
+		if m.state == stateDone {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				if m.treeScroll > 0 {
+					m.treeScroll--
+				}
+			case tea.MouseButtonWheelDown:
+				m.treeScroll++
 			}
 		}
 
@@ -563,20 +584,48 @@ func (m model) viewDone(b *strings.Builder, contentWidth, maxTreeLines int) {
 	b.WriteString(hyperlinkFile(outDir))
 	b.WriteString("\n")
 
-	// File tree - cap lines so it does not overflow the box height.
+	// File tree — scrollable window into the full tree.
 	if m.treeOutput != "" {
-		lines := strings.Split(m.treeOutput, "\n")
-		shown := lines
-		hidden := 0
-		if len(lines) > maxTreeLines {
-			shown = lines[:maxTreeLines]
-			hidden = len(lines) - maxTreeLines
+		allLines := strings.Split(m.treeOutput, "\n")
+		total := len(allLines)
+
+		// Clamp scroll to valid range.
+		scroll := m.treeScroll
+		if maxScroll := total - maxTreeLines; scroll > maxScroll {
+			scroll = maxScroll
 		}
+		if scroll < 0 {
+			scroll = 0
+		}
+
+		above := scroll
+		below := total - scroll - maxTreeLines
+		if below < 0 {
+			below = 0
+		}
+
+		// Each active indicator consumes one row from the visible window.
+		usable := maxTreeLines
+		if above > 0 {
+			usable--
+		}
+		if below > 0 {
+			usable--
+		}
+		end := scroll + usable
+		if end > total {
+			end = total
+		}
+
 		b.WriteString("\n")
-		b.WriteString(styleDim.Render(strings.Join(shown, "\n")))
-		if hidden > 0 {
+		if above > 0 {
+			b.WriteString(styleDim.Render(fmt.Sprintf("  ↑ %d above", above)))
 			b.WriteString("\n")
-			b.WriteString(styleDim.Render(fmt.Sprintf("  ...and %d more", hidden)))
+		}
+		b.WriteString(styleDim.Render(strings.Join(allLines[scroll:end], "\n")))
+		if below > 0 {
+			b.WriteString("\n")
+			b.WriteString(styleDim.Render(fmt.Sprintf("  ↓ %d below", below)))
 		}
 		b.WriteString("\n")
 	}
@@ -861,7 +910,11 @@ func (m model) hintBar(_ int) string {
 	case stateCrawling:
 		return hint("Esc", "Cancel") + "   " + hint("Ctrl+Q", "Quit")
 	case stateDone:
-		return hint("Enter", "Crawl another") + "   " + hint("Ctrl+S", "Configure") + "   " + hint("Ctrl+Q", "Quit")
+		h := hint("Enter", "Crawl another") + "   " + hint("Ctrl+S", "Configure") + "   " + hint("Ctrl+Q", "Quit")
+		if m.treeOutput != "" {
+			h = hint("↑↓", "Scroll") + "   " + h
+		}
+		return h
 	}
 	return ""
 }
