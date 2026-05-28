@@ -30,11 +30,19 @@ cd go-scraper
 make build
 ```
 
-Move the resulting `go-scraper` binary somewhere on your `$PATH`, for example:
+Move the resulting binary somewhere on your `$PATH`.
 
+**macOS / Linux:**
 ```sh
 mv go-scraper /usr/local/bin/
 ```
+
+**Windows** (run in PowerShell as Administrator):
+```powershell
+Move-Item go-scraper.exe C:\Windows\System32\go-scraper.exe
+```
+
+Or move it to any folder that is already on your `%PATH%`, for example `C:\Program Files\go-scraper\`, and add that folder to your user `PATH` via **System Properties → Environment Variables**.
 
 ---
 
@@ -45,6 +53,7 @@ go-scraper                              # open TUI, type a URL interactively
 go-scraper --url https://example.com   # pre-fill URL and start crawling immediately
 go-scraper --setup                     # open the config wizard directly
 go-scraper --version                   # print version and exit
+go-scraper --help                      # show help and exit
 ```
 
 ---
