@@ -200,9 +200,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case stateConfig:
 			switch msg.Type {
-			case tea.KeyCtrlQ:
+			case tea.KeyCtrlQ, tea.KeyCtrlC:
 				m.quitConfirm = true
-			case tea.KeyEsc, tea.KeyCtrlC:
+			case tea.KeyEsc:
 				// Can only escape the wizard if it was opened manually (not first-boot).
 				if !m.firstBoot {
 					m.state = stateInput
@@ -369,7 +369,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.configBoolVal = m.config.DownloadMedia
 				m.configSavedPath = ""
 				m.treeScroll = 0
-			case tea.KeyCtrlQ, tea.KeyCtrlC, tea.KeyEsc:
+			case tea.KeyEsc:
+				m.state = stateInput
+				m.input = ""
+				m.inputCursor = 0
+				m.errMessage = ""
+				m.recentLog = nil
+				m.errorLog = nil
+				m.treeOutput = ""
+				m.treeScroll = 0
+			case tea.KeyCtrlQ, tea.KeyCtrlC:
 				m.quitConfirm = true
 			}
 		}
@@ -387,6 +396,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case introTickMsg:
+		if m.state != stateIntro {
+			return m, nil
+		}
 		artLen := len([]rune(strings.Join(introLines, "\n")))
 		m.introPos += introCharsPerTick
 		if m.introPos > artLen {
@@ -401,11 +413,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, introTick()
 
 	case introTaglineMsg:
+		if m.state != stateIntro {
+			return m, nil
+		}
 		m.introShowTagline = true
 		// Hold the complete intro for a moment before transitioning.
 		return m, tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg { return introDoneMsg{} })
 
 	case introDoneMsg:
+		if m.state != stateIntro {
+			return m, nil
+		}
 		m.state = m.introNextState
 		if m.state == stateCrawling {
 			return m, tea.Batch(startCrawl(m.input, m.config), m.spinner.Tick)
