@@ -116,7 +116,7 @@ func writeErrors(b *strings.Builder, errorLog []logLineMsg, contentWidth, maxErr
 		shown = errorLog[overflow:]
 	}
 	for _, entry := range shown {
-		b.WriteString(renderWrap(styleError, truncate(entry.line, contentWidth), contentWidth))
+		b.WriteString(renderWrap(styleError, entry.line, contentWidth))
 		b.WriteString("\n")
 	}
 	if overflow > 0 {

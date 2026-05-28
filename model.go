@@ -176,9 +176,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Quit confirm overlay intercepts all keys.
 		if m.quitConfirm {
 			switch msg.Type {
-			case tea.KeyEnter:
+			case tea.KeyEnter, tea.KeyCtrlC:
 				return m, tea.Quit
-			case tea.KeyEsc, tea.KeyCtrlC:
+			case tea.KeyEsc:
 				m.quitConfirm = false
 			}
 			return m, nil
@@ -458,6 +458,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errMessage = "Error: " + msg.err.Error()
 		case wasCancelling:
 			m.errMessage = fmt.Sprintf("Cancelled. %d files saved (%s).", m.completed, formatBytes(m.totalBytes))
+		case m.completed == 0:
+			m.errMessage = "Failed. No files were saved."
 		default:
 			m.errMessage = fmt.Sprintf("Done. %d files saved (%s).", m.completed, formatBytes(m.totalBytes))
 		}
@@ -569,7 +571,7 @@ func (m model) viewDone(b *strings.Builder, contentWidth, maxTreeLines int) {
 
 	// Status line - colour changes based on outcome.
 	switch {
-	case strings.HasPrefix(m.errMessage, "Error"):
+	case strings.HasPrefix(m.errMessage, "Error"), strings.HasPrefix(m.errMessage, "Failed"):
 		b.WriteString(renderWrap(styleError, m.errMessage, contentWidth))
 	case strings.HasPrefix(m.errMessage, "Cancelled"):
 		b.WriteString(renderWrap(styleDim, m.errMessage, contentWidth))
@@ -577,12 +579,14 @@ func (m model) viewDone(b *strings.Builder, contentWidth, maxTreeLines int) {
 		b.WriteString(renderWrap(styleSuccess, m.errMessage, contentWidth))
 	}
 
-	// Clickable link to the output folder.
-	outDir := expandHome(m.config.OutputDir)
-	b.WriteString("\n")
-	b.WriteString(styleDim.Render("Saved to: "))
-	b.WriteString(hyperlinkFile(outDir))
-	b.WriteString("\n")
+	// Clickable link to the output folder — only when files were actually saved.
+	if m.completed > 0 {
+		outDir := expandHome(m.config.OutputDir)
+		b.WriteString("\n")
+		b.WriteString(styleDim.Render("Saved to: "))
+		b.WriteString(hyperlinkFile(outDir))
+		b.WriteString("\n")
+	}
 
 	// File tree — scrollable window into the full tree.
 	if m.treeOutput != "" {

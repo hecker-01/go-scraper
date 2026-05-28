@@ -11,22 +11,22 @@ import (
 // Reporter builds a tree-style summary of files saved during a crawl session.
 type Reporter struct {
 	outputDir string
-	included  map[string]bool // absolute paths of session files; nil = show all
+	included  map[string]bool // absolute paths of session files
 	ancDirs   map[string]bool // ancestor dirs of included paths (for tree walk)
 }
 
-// NewReporter returns a Reporter scoped to the given output directory that
-// shows only the files in sessionPaths. Pass nil to show every file under outputDir.
+// NewReporter returns a Reporter that shows only the files in sessionPaths.
+// An empty slice produces an empty tree (no fallback to the full directory).
 func NewReporter(outputDir string, sessionPaths []string) *Reporter {
-	r := &Reporter{outputDir: outputDir}
-	if len(sessionPaths) > 0 {
-		r.included = make(map[string]bool, len(sessionPaths))
-		r.ancDirs = make(map[string]bool)
-		for _, p := range sessionPaths {
-			r.included[p] = true
-			for dir := filepath.Dir(p); strings.HasPrefix(dir, outputDir) && dir != outputDir; dir = filepath.Dir(dir) {
-				r.ancDirs[dir] = true
-			}
+	r := &Reporter{
+		outputDir: outputDir,
+		included:  make(map[string]bool, len(sessionPaths)),
+		ancDirs:   make(map[string]bool),
+	}
+	for _, p := range sessionPaths {
+		r.included[p] = true
+		for dir := filepath.Dir(p); strings.HasPrefix(dir, outputDir) && dir != outputDir; dir = filepath.Dir(dir) {
+			r.ancDirs[dir] = true
 		}
 	}
 	return r
@@ -39,14 +39,10 @@ func (r *Reporter) Build() (tree string, totalBytes int64, err error) {
 		return "", 0, nil
 	}
 	tree = r.treeString()
-	if r.included != nil {
-		for p := range r.included {
-			if info, e := os.Stat(p); e == nil {
-				totalBytes += info.Size()
-			}
+	for p := range r.included {
+		if info, e := os.Stat(p); e == nil {
+			totalBytes += info.Size()
 		}
-	} else {
-		totalBytes, err = r.sumBytes(r.outputDir)
 	}
 	return
 }
@@ -88,23 +84,6 @@ func (r *Reporter) treeLines(dir, prefix string, lines *[]string) error {
 		}
 	}
 	return nil
-}
-
-// sumBytes returns the total size of all regular files under dir.
-func (r *Reporter) sumBytes(dir string) (int64, error) {
-	var total int64
-	err := filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		total += info.Size()
-		return nil
-	})
-	return total, err
 }
 
 // treeString builds the tree string, starting from outputDir.
