@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 // formatBytes formats a byte count into a human-readable string.
@@ -32,10 +34,40 @@ func expandHome(path string) string {
 	return path
 }
 
-// isValidURL returns true if s looks like an http or https URL.
+// addScheme prepends "https://" to s if it has no scheme, so bare domains
+// like "heckr.dev" become "https://heckr.dev". Already-schemed URLs are
+// returned unchanged.
+func addScheme(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	if !strings.Contains(s, "://") {
+		return "https://" + s
+	}
+	return s
+}
+
+// isValidURL returns true if s looks like a valid http/https URL or a bare
+// domain name with a recognised public-suffix TLD (e.g. "heckr.dev").
 func isValidURL(s string) bool {
 	s = strings.TrimSpace(s)
-	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+	if s == "" {
+		return false
+	}
+	full := addScheme(s)
+	u, err := url.Parse(full)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" {
+		return false
+	}
+	// publicsuffix.EffectiveTLDPlusOne rejects hosts with no valid registered
+	// domain (e.g. bare TLDs, IP addresses, or unknown suffixes).
+	_, err = publicsuffix.EffectiveTLDPlusOne(host)
+	return err == nil
 }
 
 // parseBool converts common yes/no strings to a bool.

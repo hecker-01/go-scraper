@@ -36,13 +36,16 @@ func TestIsValidURL(t *testing.T) {
 		"http://example.com",
 		"https://example.com",
 		"https://example.com/path?q=1",
+		"example.com",
+		"heckr.dev",
+		"sub.example.co.uk",
 	}
 	invalid := []string{
 		"",
-		"example.com",
 		"ftp://example.com",
 		"javascript:void(0)",
 		"  ",
+		"notadomain",
 	}
 	for _, u := range valid {
 		if !isValidURL(u) {
@@ -52,6 +55,26 @@ func TestIsValidURL(t *testing.T) {
 	for _, u := range invalid {
 		if isValidURL(u) {
 			t.Errorf("isValidURL(%q) should be false", u)
+		}
+	}
+}
+
+func TestAddScheme(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"heckr.dev", "https://heckr.dev"},
+		{"example.com/path", "https://example.com/path"},
+		{"https://example.com", "https://example.com"},
+		{"http://example.com", "http://example.com"},
+		{"  heckr.dev  ", "https://heckr.dev"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		got := addScheme(tt.in)
+		if got != tt.want {
+			t.Errorf("addScheme(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }

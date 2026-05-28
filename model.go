@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -302,11 +303,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input = string(append(runes[:m.inputCursor:m.inputCursor], runes[m.inputCursor+1:]...))
 				}
 			case tea.KeyEnter:
-				url := strings.TrimSpace(m.input)
+				url := addScheme(m.input)
 				if !isValidURL(url) {
-					m.errMessage = "Please enter a valid http:// or https:// URL."
+					m.errMessage = "Please enter a valid URL or domain name (e.g. heckr.dev)."
 					return m, nil
 				}
+				// Write the normalised form back so the display shows https://...
+				m.input = url
+				m.inputCursor = len([]rune(url))
 				m.errMessage = ""
 				m.configSavedPath = ""
 				m.state = stateCrawling
@@ -759,8 +763,11 @@ func (m model) View() string {
 		top.WriteString(styleCursor.Render(inputCursorCh))
 		top.WriteString(styleInput.Render(inputAfter))
 		top.WriteString("\n")
-		if isValidURL(m.input) {
+		if isValidURL(addScheme(m.input)) {
 			dest := expandHome(m.config.OutputDir)
+			if u, err := url.Parse(addScheme(m.input)); err == nil && u.Hostname() != "" {
+				dest = filepath.Join(dest, u.Hostname())
+			}
 			top.WriteString(styleDim.Render("   Will save to: "))
 			top.WriteString(hyperlinkFile(dest))
 			top.WriteString("\n")
