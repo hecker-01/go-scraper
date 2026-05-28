@@ -27,10 +27,12 @@ It crawls recursively, rewrites links for offline browsing, and shows a live pro
 ```sh
 git clone https://github.com/hecker-01/go-scraper
 cd go-scraper
-make build
+make install
 ```
 
-Move the resulting binary somewhere on your `$PATH`.
+`make install` builds the binary and copies it to `/usr/local/bin` (macOS/Linux) or `C:\Windows\System32` (Windows), elevating to `sudo` automatically if the destination requires it.
+
+If you prefer to install manually, run `make build` and move the binary yourself:
 
 **macOS / Linux:**
 ```sh
@@ -42,7 +44,7 @@ mv go-scraper /usr/local/bin/
 Move-Item go-scraper.exe C:\Windows\System32\go-scraper.exe
 ```
 
-Or move it to any folder that is already on your `%PATH%`, for example `C:\Program Files\go-scraper\`, and add that folder to your user `PATH` via **System Properties → Environment Variables**.
+Or move it to any folder already on your `%PATH%`, for example `C:\Program Files\go-scraper\`, and add that folder via **System Properties → Environment Variables**.
 
 ---
 
@@ -132,11 +134,12 @@ Key decisions:
 ## Development
 
 ```sh
-make build   # compile to ./go-scraper
-make run     # go run .
-make test    # go test ./...
-make lint    # go vet ./...
-make clean   # remove binary
+make build     # compile to ./go-scraper
+make install   # build and install to /usr/local/bin (uses sudo if needed)
+make run       # go run .
+make test      # go test ./...
+make lint      # go vet ./...
+make clean     # remove binary
 ```
 
 ---
