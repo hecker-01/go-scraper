@@ -3,8 +3,6 @@
 A terminal UI tool that downloads a full website to a local folder.
 It crawls recursively, rewrites links for offline browsing, and shows a live progress view while it works.
 
-> Minor Applied Development - Jesse Flantua - Grafisch Lyceum Rotterdam 2025-2026
-
 ---
 
 ## Features
@@ -47,54 +45,6 @@ go-scraper                              # open TUI, type a URL interactively
 go-scraper --url https://example.com   # pre-fill URL and start crawling immediately
 go-scraper --setup                     # open the config wizard directly
 go-scraper --version                   # print version and exit
-```
-
----
-
-## What the TUI looks like
-
-**While crawling:**
-
-```
-╭──────────────────────────────────────────────────────────╮
-│                                                          │
-│  go-scraper                                              │
-│                                                          │
-│  https://example.com                                     │
-│  Saving to: ~/Downloads/go-scraper                       │
-│                                                          │
-│  . 42 files / 1.8 MB / logo.png                          │
-│                                                          │
-│  ~/Downloads/go-scraper/example.com/style.css            │
-│  ~/Downloads/go-scraper/example.com/about.html           │
-│                                                          │
-│                                                          │
-│  Esc Cancel   Ctrl+Q Quit                                │
-│                                                          │
-╰──────────────────────────────────────────────────────────╯
-```
-
-**When done:**
-
-```
-╭──────────────────────────────────────────────────────────╮
-│                                                          │
-│  go-scraper                                              │
-│                                                          │
-│  https://example.com                                     │
-│                                                          │
-│  Done. 42 files saved (1.8 MB).                          │
-│  Saved to: ~/Downloads/go-scraper                        │
-│                                                          │
-│  ├── example.com                                         │
-│  │   ├── example.com.html                                │
-│  │   ├── style.css                                       │
-│  │   └── img                                             │
-│  │       └── logo.png                                    │
-│                                                          │
-│  Enter Crawl another   Ctrl+S Configure   Ctrl+Q Quit    │
-│                                                          │
-╰──────────────────────────────────────────────────────────╯
 ```
 
 ---
