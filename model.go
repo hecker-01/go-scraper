@@ -543,7 +543,7 @@ func (m model) viewConfig(b *strings.Builder, contentWidth int) {
 // (capped to maxTreeLines rows to stay within the visible box).
 func (m model) viewDone(b *strings.Builder, contentWidth, maxTreeLines int) {
 	// URL that was just crawled.
-	b.WriteString(styleDim.Render(truncate(m.input, contentWidth)))
+	b.WriteString(styleInput.Render(truncate(m.input, contentWidth)))
 	b.WriteString("\n\n")
 
 	// Status line - colour changes based on outcome.
@@ -594,7 +594,7 @@ func (m model) View() string {
 		height = 24
 	}
 
-	const minW, minH = 40, 16
+	const minW, minH = 64, 20
 	if width < minW || height < minH {
 		msg := fmt.Sprintf(" Terminal too small!\n Resize to at least %d x %d ", minW, minH)
 		box := lipgloss.NewStyle().
@@ -619,19 +619,31 @@ func (m model) View() string {
 	// innerHeight = screen height minus border (2 rows) and padding (2 rows).
 	innerHeight := height - 4
 
-	// Budget rows that can be consumed by variable-height sections (tree + errors).
-	// Fixed overhead in the done state: mini header + URL/blank/done/saved/
-	// tree-blank-before/tree-blank-after/errors-blank-blank = headerH + 9.
+	// Budget rows for variable-height sections (tree + errors).
+	// Fixed overhead: mini header + 1 blank + URL + blank + status + blank + saved + blank-before-tree + blank-after-tree = headerH + 9.
 	headerH := len(miniLines)
 	avail := innerHeight - headerH - 9
 	if avail < 4 {
 		avail = 4
 	}
+	// Cap for how many error lines to show if errors exist.
 	maxErrors := avail * 2 / 5
 	if maxErrors < 1 {
 		maxErrors = 1
 	}
-	maxTreeLines := avail - maxErrors
+	// Only reserve lines for errors that will actually be rendered.
+	actualErrLines := 0
+	if n := len(m.errorLog); n > 0 {
+		shown := n
+		if shown > maxErrors {
+			shown = maxErrors
+		}
+		actualErrLines = shown + 2 // +2 for the leading "\n\n" in writeErrors
+		if n > maxErrors {
+			actualErrLines++ // "...and N more" line
+		}
+	}
+	maxTreeLines := avail - actualErrLines
 	if maxTreeLines < 3 {
 		maxTreeLines = 3
 	}

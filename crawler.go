@@ -103,7 +103,7 @@ func (c *Crawler) Run(ctx context.Context, startURL string, ch chan<- tea.Msg) {
 		select {
 		case <-ctx.Done():
 			c.rewriteAllHTML(ch)
-			reporter := NewReporter(expandHome(c.cfg.OutputDir))
+			reporter := NewReporter(expandHome(c.cfg.OutputDir), c.sessionPaths())
 			tree, totalBytes, _ := reporter.Build()
 			ch <- crawlDoneMsg{treeOutput: tree, totalBytes: totalBytes}
 			return
@@ -142,7 +142,7 @@ func (c *Crawler) Run(ctx context.Context, startURL string, ch chan<- tea.Msg) {
 	c.rewriteAllHTML(ch)
 
 	// Normal completion - build final report.
-	reporter := NewReporter(expandHome(c.cfg.OutputDir))
+	reporter := NewReporter(expandHome(c.cfg.OutputDir), c.sessionPaths())
 	tree, totalBytes, _ := reporter.Build()
 	ch <- crawlDoneMsg{treeOutput: tree, totalBytes: totalBytes}
 }
@@ -395,6 +395,15 @@ func resolveURL(base *url.URL, href string) (string, error) {
 		return "", err
 	}
 	return base.ResolveReference(ref).String(), nil
+}
+
+// sessionPaths returns the absolute file paths of all files saved this session.
+func (c *Crawler) sessionPaths() []string {
+	paths := make([]string, 0, len(c.savedPaths))
+	for _, p := range c.savedPaths {
+		paths = append(paths, p)
+	}
+	return paths
 }
 
 // normaliseURL strips the fragment from rawURL and returns the cleaned string
