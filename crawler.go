@@ -27,7 +27,11 @@ var cssImportRe = regexp.MustCompile(`@import\s+["']([^"']+)["']`)
 // jsMediaRe catches bare relative media paths in JS string literals that have
 // no leading slash, ./ or ../ — e.g. 'hero.webp', "font.woff2".
 // Only pure media extensions are matched to keep false-positive risk low.
-var jsMediaRe = regexp.MustCompile(`["']([a-zA-Z0-9_\-][a-zA-Z0-9_\-./]*\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|woff2|woff|ttf|otf|mp4|webm|mp3|ogg|wav))["']`)
+var jsMediaRe = regexp.MustCompile("\"'([a-zA-Z0-9_\\-][a-zA-Z0-9_\\-./]*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|woff2|woff|ttf|otf|mp4|webm|mp3|ogg|wav))[\"']")
+
+// jsFetchRe matches the first string argument of a fetch() call.
+// No extension filter — fetch() can load JSON, HTML fragments, or any resource.
+var jsFetchRe = regexp.MustCompile(`fetch\(\s*["']([^"'\s]+)["']`)
 
 // ─── Crawler ──────────────────────────────────────────────────────────────────
 
@@ -406,6 +410,11 @@ func (c *Crawler) extractLinksFromJS(jsPath, jsURL string, pageDepth, domainHops
 			!strings.HasPrefix(candidate, "http") {
 			addCandidate(candidate)
 		}
+	}
+
+	// jsFetchRe: fetch('url') — no extension filter, any resource type is valid.
+	for _, match := range jsFetchRe.FindAllSubmatch(data, -1) {
+		addCandidate(string(match[1]))
 	}
 
 	return items, nil

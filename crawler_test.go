@@ -145,6 +145,43 @@ func TestDomainDepthZero(t *testing.T) {
 	}
 }
 
+// ─── fetch() extraction ──────────────────────────────────────────────────────
+
+// TestFetchExtraction verifies that URLs inside fetch() calls in JS files are
+// downloaded, including non-media types like JSON.
+func TestFetchExtraction(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprintf(w, `<html><head><script src="/app.js"></script></head><body></body></html>`)
+		case "/app.js":
+			w.Header().Set("Content-Type", "application/javascript")
+			fmt.Fprintf(w, `fetch('/data.json'); fetch("/profile.webp");`)
+		case "/data.json":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"name":"test"}`)
+		case "/profile.webp":
+			w.Header().Set("Content-Type", "image/webp")
+			w.Write([]byte("webpdata"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	outDir := t.TempDir()
+	cfg := Config{OutputDir: outDir, DownloadMedia: true, DomainDepth: 0, MaxMediaSizeMB: 0}
+	runCrawler(t, cfg, srv.URL+"/")
+
+	names := savedBasenames(t, outDir)
+	for _, want := range []string{"data.json", "profile.webp"} {
+		if !names[want] {
+			t.Errorf("expected fetch() resource %q to be saved", want)
+		}
+	}
+}
+
 // ─── CSS url() extraction ────────────────────────────────────────────────────
 
 // TestInlineStyleExtraction verifies that url() references inside <style> blocks
