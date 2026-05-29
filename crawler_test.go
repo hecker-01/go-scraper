@@ -147,6 +147,39 @@ func TestDomainDepthZero(t *testing.T) {
 
 // ─── CSS url() extraction ────────────────────────────────────────────────────
 
+// TestInlineStyleExtraction verifies that url() references inside <style> blocks
+// and style= attributes are downloaded even without any <img> or <link> element.
+func TestInlineStyleExtraction(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprintf(w,
+				`<html>`+
+					`<head><style>.hero{background:url('/img_yara.webp')}.nav{background:url("/img_csd.webp")}</style></head>`+
+					`<body><div style="background-image:url('jaar1.webp')">content</div></body>`+
+					`</html>`)
+		case "/img_yara.webp", "/img_csd.webp", "/jaar1.webp":
+			w.Header().Set("Content-Type", "image/webp")
+			w.Write([]byte("webpdata"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	outDir := t.TempDir()
+	cfg := Config{OutputDir: outDir, DownloadMedia: true, DomainDepth: 0, MaxMediaSizeMB: 0}
+	runCrawler(t, cfg, srv.URL+"/")
+
+	names := savedBasenames(t, outDir)
+	for _, want := range []string{"img_yara.webp", "img_csd.webp", "jaar1.webp"} {
+		if !names[want] {
+			t.Errorf("expected inline-CSS asset %q to be saved", want)
+		}
+	}
+}
+
 // TestCSSAssetExtraction verifies that images and fonts referenced via url()
 // and @import inside a CSS file are downloaded even though they are not linked
 // directly from any HTML element.

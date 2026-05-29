@@ -236,30 +236,57 @@ func (c *Crawler) extractLinks(htmlPath, pageURL string, pageDepth, domainHops i
 	seenOnPage := make(map[string]bool)
 	var items []queueItem
 
+	// enqueue resolves raw to an absolute URL and adds it to items if it has
+	// not been seen on this page or globally.
+	enqueue := func(raw string) {
+		abs, err := resolveURL(base, raw)
+		if err != nil || abs == "" {
+			return
+		}
+		norm := normaliseURL(abs)
+		if norm == "" || seenOnPage[norm] || c.visited[norm] {
+			return
+		}
+		seenOnPage[norm] = true
+		hops := domainHops
+		if extractDomain(norm) != c.startDomain {
+			hops++
+		}
+		items = append(items, queueItem{
+			url:        norm,
+			pageDepth:  pageDepth + 1,
+			domainHops: hops,
+		})
+	}
+
+	// enqueueCSSText scans CSS source text for url() references and enqueues them.
+	enqueueCSSText := func(cssText string) {
+		for _, match := range cssURLRe.FindAllStringSubmatch(cssText, -1) {
+			candidate := strings.TrimSpace(match[1])
+			if candidate != "" && !strings.HasPrefix(strings.ToLower(candidate), "data:") {
+				enqueue(candidate)
+			}
+		}
+	}
+
 	var traverse func(*html.Node)
 	traverse = func(n *html.Node) {
 		if n.Type == html.ElementNode {
+			// Standard href / src / srcset attributes.
 			for _, raw := range c.linksFromNode(n) {
-				abs, err := resolveURL(base, raw)
-				if err != nil || abs == "" {
-					continue
+				enqueue(raw)
+			}
+			// Inline style= attribute: e.g. <div style="background:url('img.webp')">
+			if styleVal := attrVal(n, "style"); styleVal != "" {
+				enqueueCSSText(styleVal)
+			}
+			// <style> block: scan text children for url() references.
+			if n.Data == "style" {
+				for child := n.FirstChild; child != nil; child = child.NextSibling {
+					if child.Type == html.TextNode {
+						enqueueCSSText(child.Data)
+					}
 				}
-				norm := normaliseURL(abs)
-				if norm == "" || seenOnPage[norm] || c.visited[norm] {
-					continue
-				}
-				seenOnPage[norm] = true
-
-				hops := domainHops
-				if extractDomain(norm) != c.startDomain {
-					hops++
-				}
-
-				items = append(items, queueItem{
-					url:        norm,
-					pageDepth:  pageDepth + 1,
-					domainHops: hops,
-				})
 			}
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
