@@ -211,7 +211,13 @@ func (r *Rewriter) rewriteElementAttrs(n *html.Node, base *url.URL, htmlPath str
 		r.rewriteAttr(n, "src", base, htmlPath, savedPaths)
 	case "img", "video", "audio", "source", "track", "embed":
 		r.rewriteAttr(n, "src", base, htmlPath, savedPaths)
-		r.rewriteSrcsetAttr(n, base, htmlPath, savedPaths)
+		r.rewriteAttr(n, "data-src", base, htmlPath, savedPaths)
+		r.rewriteAttr(n, "data-lazy", base, htmlPath, savedPaths)
+		r.rewriteAttr(n, "data-lazy-src", base, htmlPath, savedPaths)
+		r.rewriteAttr(n, "data-original", base, htmlPath, savedPaths)
+		r.rewriteSrcsetAttr(n, "srcset", base, htmlPath, savedPaths)
+		r.rewriteSrcsetAttr(n, "data-srcset", base, htmlPath, savedPaths)
+		r.rewriteSrcsetAttr(n, "data-lazy-srcset", base, htmlPath, savedPaths)
 	}
 }
 
@@ -231,11 +237,11 @@ func (r *Rewriter) rewriteAttr(n *html.Node, key string, base *url.URL, htmlPath
 	}
 }
 
-// rewriteSrcsetAttr rewrites every URL inside a srcset attribute value,
+// rewriteSrcsetAttr rewrites every URL inside a srcset-formatted attribute,
 // keeping any width/density descriptors intact.
-func (r *Rewriter) rewriteSrcsetAttr(n *html.Node, base *url.URL, htmlPath string, savedPaths map[string]string) {
+func (r *Rewriter) rewriteSrcsetAttr(n *html.Node, key string, base *url.URL, htmlPath string, savedPaths map[string]string) {
 	for i, a := range n.Attr {
-		if a.Key != "srcset" {
+		if a.Key != key {
 			continue
 		}
 		if newVal := r.rewriteSrcset(a.Val, base, htmlPath, savedPaths); newVal != "" {

@@ -24,6 +24,11 @@ var cssURLRe = regexp.MustCompile(`url\(\s*["']?([^"')\s]+)["']?\s*\)`)
 // cssImportRe matches bare @import "file" / @import 'file' (no url() wrapper).
 var cssImportRe = regexp.MustCompile(`@import\s+["']([^"']+)["']`)
 
+// jsMediaRe catches bare relative media paths in JS string literals that have
+// no leading slash, ./ or ../ — e.g. 'hero.webp', "font.woff2".
+// Only pure media extensions are matched to keep false-positive risk low.
+var jsMediaRe = regexp.MustCompile(`["']([a-zA-Z0-9_\-][a-zA-Z0-9_\-./]*\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|woff2|woff|ttf|otf|mp4|webm|mp3|ogg|wav))["']`)
+
 // ─── Crawler ──────────────────────────────────────────────────────────────────
 
 // htmlEntry records an HTML file that needs link rewriting after the crawl.
@@ -276,6 +281,24 @@ func (c *Crawler) extractLinks(htmlPath, pageURL string, pageDepth, domainHops i
 			for _, raw := range c.linksFromNode(n) {
 				enqueue(raw)
 			}
+			// JS lazy-load attributes: data-src, data-srcset, data-lazy, etc.
+			for _, attr := range n.Attr {
+				switch attr.Key {
+				case "data-src", "data-lazy", "data-lazy-src", "data-original":
+					enqueue(strings.TrimSpace(attr.Val))
+				case "data-srcset", "data-lazy-srcset":
+					for _, u := range parseSrcset(attr.Val) {
+						enqueue(u)
+					}
+				case "data-bg", "data-background", "data-background-image":
+					val := strings.TrimSpace(attr.Val)
+					if strings.Contains(val, "url(") {
+						enqueueCSSText(val)
+					} else if val != "" {
+						enqueue(val)
+					}
+				}
+			}
 			// Inline style= attribute: e.g. <div style="background:url('img.webp')">
 			if styleVal := attrVal(n, "style"); styleVal != "" {
 				enqueueCSSText(styleVal)
@@ -345,22 +368,16 @@ func (c *Crawler) extractLinksFromJS(jsPath, jsURL string, pageDepth, domainHops
 	seen := make(map[string]bool)
 	var items []queueItem
 
-	for _, match := range jsURLRe.FindAllSubmatch(data, -1) {
-		candidate := string(match[1])
-		// Only follow strings that look like asset URLs (by extension).
-		if !isMediaURL(candidate) {
-			continue
-		}
+	addCandidate := func(candidate string) {
 		abs, err := resolveURL(base, candidate)
 		if err != nil || abs == "" {
-			continue
+			return
 		}
 		norm := normaliseURL(abs)
 		if norm == "" || seen[norm] || c.visited[norm] {
-			continue
+			return
 		}
 		seen[norm] = true
-
 		hops := domainHops
 		if extractDomain(norm) != c.startDomain {
 			hops++
@@ -371,6 +388,26 @@ func (c *Crawler) extractLinksFromJS(jsPath, jsURL string, pageDepth, domainHops
 			domainHops: hops,
 		})
 	}
+
+	// jsURLRe: absolute URLs and paths starting with /, ./ or ../
+	for _, match := range jsURLRe.FindAllSubmatch(data, -1) {
+		candidate := string(match[1])
+		if isMediaURL(candidate) {
+			addCandidate(candidate)
+		}
+	}
+
+	// jsMediaRe: bare relative paths like 'hero.webp' with no leading slash/dot.
+	for _, match := range jsMediaRe.FindAllSubmatch(data, -1) {
+		candidate := string(match[1])
+		if !strings.HasPrefix(candidate, "/") &&
+			!strings.HasPrefix(candidate, "./") &&
+			!strings.HasPrefix(candidate, "../") &&
+			!strings.HasPrefix(candidate, "http") {
+			addCandidate(candidate)
+		}
+	}
+
 	return items, nil
 }
 
