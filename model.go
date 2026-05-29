@@ -65,9 +65,10 @@ const (
 	stateInput                 // URL input screen
 	stateCrawling              // live crawl progress
 	stateDone                  // summary + file tree
+	stateServing               // HTTP file server running
 )
 
-const numConfigSteps = 5
+const numConfigSteps = 6
 
 type model struct {
 	state  state
@@ -108,6 +109,12 @@ type model struct {
 	// done
 	treeOutput string
 	treeScroll int // index of the first visible tree line
+
+	// serving
+	serveURL         string
+	serveNetworkURL  string
+	stopServer       func()
+	servingPrevState state // screen to return to when Esc is pressed from stateServing
 
 	// overlays
 	quitConfirm bool
@@ -177,6 +184,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.quitConfirm {
 			switch msg.Type {
 			case tea.KeyEnter, tea.KeyCtrlC:
+				if m.stopServer != nil {
+					m.stopServer()
+				}
 				return m, tea.Quit
 			case tea.KeyEsc:
 				m.quitConfirm = false
@@ -273,13 +283,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.Type {
 			case tea.KeyCtrlQ, tea.KeyCtrlC, tea.KeyEsc:
 				m.quitConfirm = true
-			case tea.KeyCtrlS:
+			case tea.KeyCtrlG:
 				m.state = stateConfig
 				m.configStep = 0
 				m.configInput = ""
 				m.configCursor = 0
 				m.configBoolVal = m.config.DownloadMedia
 				m.configSavedPath = ""
+			case tea.KeyCtrlS:
+				if m.config.ServePort == 0 {
+					m.errMessage = "Serve port not configured. Press Ctrl+G to configure."
+				} else {
+					m.servingPrevState = stateInput
+					return m, startServerCmd(m.config.OutputDir, m.config.ServePort)
+				}
 			case tea.KeyLeft:
 				if m.inputCursor > 0 {
 					m.inputCursor--
@@ -361,7 +378,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.errorLog = nil
 				m.treeOutput = ""
 				m.treeScroll = 0
-			case tea.KeyCtrlS:
+			case tea.KeyCtrlG:
 				m.state = stateConfig
 				m.configStep = 0
 				m.configInput = ""
@@ -369,6 +386,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.configBoolVal = m.config.DownloadMedia
 				m.configSavedPath = ""
 				m.treeScroll = 0
+			case tea.KeyCtrlS:
+				if m.config.ServePort == 0 {
+					m.errMessage = "Serve port not configured. Press Ctrl+G to configure."
+				} else {
+					m.servingPrevState = stateDone
+					return m, startServerCmd(m.config.OutputDir, m.config.ServePort)
+				}
 			case tea.KeyEsc:
 				m.state = stateInput
 				m.input = ""
@@ -378,6 +402,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.errorLog = nil
 				m.treeOutput = ""
 				m.treeScroll = 0
+			case tea.KeyCtrlQ, tea.KeyCtrlC:
+				m.quitConfirm = true
+			default:
+				if msg.Type == tea.KeyRunes && string(msg.Runes) == "s" {
+					if m.config.ServePort == 0 {
+						m.errMessage = "Serve port not configured. Press Ctrl+G to configure."
+					} else {
+						m.servingPrevState = stateDone
+						return m, startServerCmd(m.config.OutputDir, m.config.ServePort)
+					}
+				}
+			}
+
+		case stateServing:
+			switch msg.Type {
+			case tea.KeyEsc:
+				if m.stopServer != nil {
+					m.stopServer()
+					m.stopServer = nil
+				}
+				m.serveURL = ""
+				m.serveNetworkURL = ""
+				m.state = m.servingPrevState
 			case tea.KeyCtrlQ, tea.KeyCtrlC:
 				m.quitConfirm = true
 			}
@@ -481,6 +528,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			m.errMessage = fmt.Sprintf("Done. %d files saved (%s).", m.completed, formatBytes(m.totalBytes))
 		}
+
+	case serverStartedMsg:
+		m.serveURL = msg.url
+		m.serveNetworkURL = msg.networkURL
+		m.stopServer = msg.stop
+		m.state = stateServing
+
+	case serverErrorMsg:
+		m.errMessage = "Server error: " + msg.err.Error()
 	}
 
 	return m, nil
@@ -502,6 +558,8 @@ func (m model) configFieldInfo() (label, current, fieldHint string) {
 		return "Domain depth", strconv.Itoa(m.config.DomainDepth), "0 = starting domain only, 1 = one hop to external domains, etc."
 	case 4:
 		return "Max crawl depth", strconv.Itoa(m.config.MaxDepth), "0 = unlimited"
+	case 5:
+		return "Serve port", strconv.Itoa(m.config.ServePort), "port for the built-in HTTP server (e.g. 8080), 0 = disabled"
 	}
 	return "", "", ""
 }
@@ -528,6 +586,10 @@ func (m *model) applyConfigStep() {
 	case 4:
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			m.config.MaxDepth = n
+		}
+	case 5:
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			m.config.ServePort = n
 		}
 	}
 }
@@ -651,6 +713,25 @@ func (m model) viewDone(b *strings.Builder, contentWidth, maxTreeLines int) {
 		}
 		b.WriteString("\n")
 	}
+}
+
+// viewServing renders the stateServing screen showing the active server URLs.
+func (m model) viewServing(b *strings.Builder, contentWidth int) {
+	b.WriteString(stylePrompt.Render("Serving scraped site locally"))
+	b.WriteString("\n\n")
+	b.WriteString(styleDim.Render("Local:   "))
+	b.WriteString(hyperlinkHTTP(m.serveURL, styleSuccess.Render(m.serveURL)))
+	b.WriteString("\n")
+	if m.serveNetworkURL != "" {
+		b.WriteString(styleDim.Render("Network: "))
+		b.WriteString(hyperlinkHTTP(m.serveNetworkURL, styleSuccess.Render(m.serveNetworkURL)))
+		b.WriteString("\n")
+	}
+	b.WriteString(styleDim.Render("Root:    "))
+	b.WriteString(hyperlinkFile(expandHome(m.config.OutputDir)))
+	b.WriteString("\n\n")
+	b.WriteString(renderWrap(styleDim, "Open a URL in your browser to browse the downloaded site.", contentWidth))
+	b.WriteString("\n")
 }
 
 // ─── View ─────────────────────────────────────────────────────────────────────
@@ -892,6 +973,10 @@ func (m model) View() string {
 		top.WriteString("\n")
 		m.viewDone(&top, contentWidth, maxTreeLines)
 		writeErrors(&top, m.errorLog, contentWidth, maxErrors)
+
+	case stateServing:
+		top.WriteString("\n")
+		m.viewServing(&top, contentWidth)
 	}
 
 	// Pin the hint bar to the bottom by padding with blank lines.
@@ -928,15 +1013,21 @@ func (m model) hintBar(_ int) string {
 		}
 		return arrowHint + hint("Esc", "Cancel") + "   " + hint("Ctrl+Q", "Quit")
 	case stateInput:
-		return hint("Enter", "Crawl") + "   " + hint("Ctrl+S", "Configure") + "   " + hint("Ctrl+Q", "Quit")
+		return hint("Enter", "Crawl") + "   " + hint("Ctrl+S", "Serve") + "   " + hint("Ctrl+G", "Configure") + "   " + hint("Ctrl+Q", "Quit")
 	case stateCrawling:
 		return hint("Esc", "Cancel") + "   " + hint("Ctrl+Q", "Quit")
 	case stateDone:
-		h := hint("Enter", "Crawl another") + "   " + hint("Ctrl+S", "Configure") + "   " + hint("Ctrl+Q", "Quit")
+		var serveHint string
+		if m.config.ServePort > 0 {
+			serveHint = hint("Ctrl+S", "Serve") + "   "
+		}
+		h := serveHint + hint("Enter", "Crawl another") + "   " + hint("Ctrl+G", "Configure") + "   " + hint("Ctrl+Q", "Quit")
 		if m.treeOutput != "" {
 			h = hint("↑↓", "Scroll") + "   " + h
 		}
 		return h
+	case stateServing:
+		return hint("Esc", "Stop serving") + "   " + hint("Ctrl+Q", "Quit")
 	}
 	return ""
 }

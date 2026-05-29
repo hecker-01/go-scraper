@@ -40,6 +40,11 @@ var (
 	styleCursor = lipgloss.NewStyle().Reverse(true)
 )
 
+// hyperlinkHTTP wraps display in an OSC 8 terminal hyperlink pointing to rawURL.
+func hyperlinkHTTP(rawURL, display string) string {
+	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", rawURL, display)
+}
+
 // hyperlinkFile wraps path in an OSC 8 terminal hyperlink (file:// URL),
 // making it clickable in modern terminals (Windows Terminal, VS Code, iTerm2).
 func hyperlinkFile(path string) string {

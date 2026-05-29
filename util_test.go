@@ -244,16 +244,28 @@ func TestURLToLocalPath(t *testing.T) {
 			"text/html",
 			filepath.Join("example.com", "about", "index.html"),
 		},
-		// Has extension -> keep as-is
+		// Has extension, content-type matches -> keep as-is
 		{
 			"https://example.com/style.css",
 			"text/css",
 			filepath.Join("example.com", "style.css"),
 		},
+		// Has extension, content-type is unknown (image) -> keep original extension
 		{
 			"https://example.com/img/logo.png",
 			"image/png",
 			filepath.Join("example.com", "img", "logo.png"),
+		},
+		// Server-side script served as HTML -> use content-type extension
+		{
+			"https://example.com/index.php",
+			"text/html",
+			filepath.Join("example.com", "index.html"),
+		},
+		{
+			"https://example.com/api/data.php",
+			"application/json",
+			filepath.Join("example.com", "api", "data.json"),
 		},
 		// Query string is stripped (does not affect the saved path)
 		{

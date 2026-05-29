@@ -15,6 +15,7 @@ type Config struct {
 	MaxMediaSizeMB int    `toml:"max_media_size_mb"` // 0 = no cap
 	DomainDepth    int    `toml:"domain_depth"`      // 0 = stay on starting domain only, 1 = one domain away, etc.
 	MaxDepth       int    `toml:"max_depth"`         // 0 = unlimited page depth
+	ServePort      int    `toml:"serve_port"`        // 0 = not configured
 }
 
 // DefaultConfig returns sensible out-of-the-box settings.

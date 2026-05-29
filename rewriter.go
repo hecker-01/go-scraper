@@ -60,8 +60,15 @@ func URLToLocalPath(rawURL, contentType string) (string, error) {
 		localPath = filepath.Join(u.Host, filepath.FromSlash(p), "index.html")
 
 	case hasExt:
-		// Real file - keep the extension the server chose.
-		localPath = filepath.Join(u.Host, filepath.FromSlash(p))
+		// Use the content-type extension when known so that server-side scripts
+		// (e.g. index.php served as text/html) are saved with the correct extension.
+		// Fall back to the URL's original extension for unrecognised types (images, etc.).
+		if ctExt := extForContentType(contentType); ctExt != "" {
+			stripped := strings.TrimSuffix(p, path.Ext(p))
+			localPath = filepath.Join(u.Host, filepath.FromSlash(stripped)+ctExt)
+		} else {
+			localPath = filepath.Join(u.Host, filepath.FromSlash(p))
+		}
 
 	default:
 		// No extension, no trailing slash - derive extension from Content-Type
