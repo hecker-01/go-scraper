@@ -86,6 +86,7 @@ func extForContentType(ct string) string {
 	// Strip parameters: "text/html; charset=utf-8" -> "text/html"
 	ct = strings.ToLower(strings.TrimSpace(strings.SplitN(ct, ";", 2)[0]))
 	switch ct {
+	// Documents
 	case "text/html", "application/xhtml+xml":
 		return ".html"
 	case "text/css":
@@ -98,8 +99,41 @@ func extForContentType(ct string) string {
 		return ".txt"
 	case "application/xml", "text/xml":
 		return ".xml"
+	// Images
 	case "image/svg+xml":
 		return ".svg"
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	case "image/avif":
+		return ".avif"
+	case "image/x-icon", "image/vnd.microsoft.icon":
+		return ".ico"
+	// Fonts
+	case "font/woff", "application/font-woff":
+		return ".woff"
+	case "font/woff2", "application/font-woff2":
+		return ".woff2"
+	case "font/ttf", "application/x-font-ttf", "font/truetype":
+		return ".ttf"
+	case "font/otf", "application/x-font-opentype":
+		return ".otf"
+	// Video / audio
+	case "video/mp4":
+		return ".mp4"
+	case "video/webm":
+		return ".webm"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/ogg":
+		return ".ogg"
+	case "audio/wav":
+		return ".wav"
 	default:
 		return ""
 	}

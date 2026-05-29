@@ -169,6 +169,10 @@ func TestIsMediaURL(t *testing.T) {
 		"https://example.com/",
 		"https://example.com/about",
 		"https://example.com/api/data",
+		// .json must NOT match .js (was a false positive with strings.Contains)
+		"https://example.com/data.json",
+		// query string must not confuse the extension check
+		"https://example.com/page?v=1.js",
 	}
 	for _, u := range media {
 		if !isMediaURL(u) {
@@ -200,9 +204,27 @@ func TestExtForContentType(t *testing.T) {
 		{"application/xml", ".xml"},
 		{"text/xml", ".xml"},
 		{"image/svg+xml", ".svg"},
-		// Unknown types produce no extension.
-		{"image/png", ""},
-		{"video/mp4", ""},
+		// Images
+		{"image/jpeg", ".jpg"},
+		{"image/png", ".png"},
+		{"image/gif", ".gif"},
+		{"image/webp", ".webp"},
+		{"image/avif", ".avif"},
+		{"image/x-icon", ".ico"},
+		{"image/vnd.microsoft.icon", ".ico"},
+		// Fonts
+		{"font/woff", ".woff"},
+		{"font/woff2", ".woff2"},
+		{"font/ttf", ".ttf"},
+		{"font/otf", ".otf"},
+		// Video / audio
+		{"video/mp4", ".mp4"},
+		{"video/webm", ".webm"},
+		{"audio/mpeg", ".mp3"},
+		{"audio/ogg", ".ogg"},
+		{"audio/wav", ".wav"},
+		// Truly unknown types produce no extension.
+		{"application/octet-stream", ""},
 		{"", ""},
 	}
 	for _, tt := range tests {
@@ -250,13 +272,13 @@ func TestURLToLocalPath(t *testing.T) {
 			"text/css",
 			filepath.Join("example.com", "style.css"),
 		},
-		// Has extension, content-type is unknown (image) -> keep original extension
+		// Has extension matching content-type -> keep as-is
 		{
 			"https://example.com/img/logo.png",
 			"image/png",
 			filepath.Join("example.com", "img", "logo.png"),
 		},
-		// Server-side script served as HTML -> use content-type extension
+		// Server-side script served as a different type -> use content-type extension
 		{
 			"https://example.com/index.php",
 			"text/html",
@@ -266,6 +288,17 @@ func TestURLToLocalPath(t *testing.T) {
 			"https://example.com/api/data.php",
 			"application/json",
 			filepath.Join("example.com", "api", "data.json"),
+		},
+		// PHP-served image/font -> correct media extension
+		{
+			"https://example.com/thumb.php",
+			"image/jpeg",
+			filepath.Join("example.com", "thumb.jpg"),
+		},
+		{
+			"https://example.com/font.php",
+			"font/woff2",
+			filepath.Join("example.com", "font.woff2"),
 		},
 		// Query string is stripped (does not affect the saved path)
 		{

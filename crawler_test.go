@@ -145,6 +145,60 @@ func TestDomainDepthZero(t *testing.T) {
 	}
 }
 
+// ─── CSS url() extraction ────────────────────────────────────────────────────
+
+// TestCSSAssetExtraction verifies that images and fonts referenced via url()
+// and @import inside a CSS file are downloaded even though they are not linked
+// directly from any HTML element.
+func TestCSSAssetExtraction(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprintf(w,
+				`<html><head><link rel="stylesheet" href="/style.css"></head>`+
+					`<body>Hello</body></html>`)
+		case "/style.css":
+			w.Header().Set("Content-Type", "text/css")
+			fmt.Fprintf(w,
+				`@font-face { src: url('/fonts/Inter.woff2'); }`+
+					`body { background: url("img/bg.webp"); }`+
+					`@import '/reset.css';`)
+		case "/fonts/Inter.woff2":
+			w.Header().Set("Content-Type", "font/woff2")
+			w.Write([]byte("woff2data"))
+		case "/img/bg.webp":
+			w.Header().Set("Content-Type", "image/webp")
+			w.Write([]byte("webpdata"))
+		case "/reset.css":
+			w.Header().Set("Content-Type", "text/css")
+			fmt.Fprintf(w, `* { margin: 0; }`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	outDir := t.TempDir()
+	cfg := Config{
+		OutputDir:      outDir,
+		DownloadMedia:  true,
+		DomainDepth:    0,
+		MaxDepth:       0,
+		MaxMediaSizeMB: 0,
+	}
+
+	runCrawler(t, cfg, srv.URL+"/")
+
+	names := savedBasenames(t, outDir)
+
+	for _, want := range []string{"Inter.woff2", "bg.webp", "reset.css"} {
+		if !names[want] {
+			t.Errorf("expected CSS-referenced asset %q to be saved", want)
+		}
+	}
+}
+
 // ─── max_media_size_mb ────────────────────────────────────────────────────────
 
 // TestMaxMediaSizeMB verifies that files exceeding the configured cap are

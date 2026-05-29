@@ -18,6 +18,12 @@ import (
 // A subsequent isMediaURL filter keeps only asset references.
 var jsURLRe = regexp.MustCompile(`["'](https?://[^"'\s<>]+|\.{0,2}/[^"'\s<>\\]+)["']`)
 
+// cssURLRe matches url() references in CSS (quoted or unquoted).
+var cssURLRe = regexp.MustCompile(`url\(\s*["']?([^"')\s]+)["']?\s*\)`)
+
+// cssImportRe matches bare @import "file" / @import 'file' (no url() wrapper).
+var cssImportRe = regexp.MustCompile(`@import\s+["']([^"']+)["']`)
+
 // ─── Crawler ──────────────────────────────────────────────────────────────────
 
 // htmlEntry records an HTML file that needs link rewriting after the crawl.
@@ -173,7 +179,15 @@ func (c *Crawler) processURL(ctx context.Context, item queueItem, ch chan<- tea.
 	}
 
 	// Record the URL -> local path mapping for the link rewriter.
-	c.savedPaths[normaliseURL(item.url)] = result.Path
+	// Store both the full URL and the query-stripped version so the rewriter
+	// can match a link regardless of whether its query params differ from the
+	// originally crawled URL (e.g. style.css vs style.css?v=1).
+	norm := normaliseURL(item.url)
+	c.savedPaths[norm] = result.Path
+	if u, err := url.Parse(norm); err == nil && u.RawQuery != "" {
+		u.RawQuery = ""
+		c.savedPaths[u.String()] = result.Path
+	}
 
 	ch <- fileDoneMsg{path: result.Path, size: result.Bytes}
 	ch <- logLineMsg{line: result.Path, level: slog.LevelInfo}
@@ -181,6 +195,9 @@ func (c *Crawler) processURL(ctx context.Context, item queueItem, ch chan<- tea.
 	if !isHTMLContentType(result.ContentType) {
 		if isJSContentType(result.ContentType) {
 			return c.extractLinksFromJS(result.Path, item.url, item.pageDepth, item.domainHops)
+		}
+		if isCSSContentType(result.ContentType) {
+			return c.extractLinksFromCSS(result.Path, item.url, item.pageDepth, item.domainHops)
 		}
 		return nil, nil
 	}
@@ -327,6 +344,59 @@ func (c *Crawler) extractLinksFromJS(jsPath, jsURL string, pageDepth, domainHops
 			domainHops: hops,
 		})
 	}
+	return items, nil
+}
+
+// ─── extractLinksFromCSS ─────────────────────────────────────────────────────
+
+// extractLinksFromCSS scans a saved CSS file for url() and @import references
+// and returns them as queue items so images, fonts, and other CSS files are
+// downloaded during the same crawl. data: URIs are skipped.
+func (c *Crawler) extractLinksFromCSS(cssPath, cssURL string, pageDepth, domainHops int) ([]queueItem, error) {
+	data, err := os.ReadFile(cssPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading CSS %s: %w", cssPath, err)
+	}
+	base, err := url.Parse(cssURL)
+	if err != nil {
+		return nil, fmt.Errorf("parsing CSS base URL %s: %w", cssURL, err)
+	}
+
+	seen := make(map[string]bool)
+	var items []queueItem
+
+	add := func(candidate string) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || strings.HasPrefix(strings.ToLower(candidate), "data:") {
+			return
+		}
+		abs, err := resolveURL(base, candidate)
+		if err != nil || abs == "" {
+			return
+		}
+		norm := normaliseURL(abs)
+		if norm == "" || seen[norm] || c.visited[norm] {
+			return
+		}
+		seen[norm] = true
+		hops := domainHops
+		if extractDomain(norm) != c.startDomain {
+			hops++
+		}
+		items = append(items, queueItem{
+			url:        norm,
+			pageDepth:  pageDepth + 1,
+			domainHops: hops,
+		})
+	}
+
+	for _, match := range cssURLRe.FindAllSubmatch(data, -1) {
+		add(string(match[1]))
+	}
+	for _, match := range cssImportRe.FindAllSubmatch(data, -1) {
+		add(string(match[1]))
+	}
+
 	return items, nil
 }
 

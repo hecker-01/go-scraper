@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 
 	"golang.org/x/net/publicsuffix"
@@ -108,23 +109,18 @@ func isHTMLContentType(ct string) bool {
 // before even making a request. CSS and JS are included because when
 // download_media is false the user wants only HTML pages.
 func isMediaURL(rawURL string) bool {
-	lower := strings.ToLower(rawURL)
-	mediaExts := []string{
-		// stylesheets and scripts
-		".css", ".js",
-		// images
+	// Strip query string and fragment before checking the extension so that
+	// "style.css?v=1.2" is not misidentified by the ".2" suffix, and so that
+	// ".js" does not accidentally match inside ".json".
+	noQuery := strings.SplitN(strings.ToLower(rawURL), "?", 2)[0]
+	noQuery = strings.SplitN(noQuery, "#", 2)[0]
+	switch path.Ext(noQuery) {
+	case ".css", ".js",
 		".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".svg",
-		// video / audio
 		".mp4", ".webm", ".mov", ".avi", ".mp3", ".ogg", ".wav",
-		// fonts
 		".woff", ".woff2", ".ttf", ".otf", ".eot",
-		// archives / documents
-		".pdf", ".zip",
-	}
-	for _, ext := range mediaExts {
-		if strings.Contains(lower, ext) {
-			return true
-		}
+		".pdf", ".zip":
+		return true
 	}
 	return false
 }
@@ -132,6 +128,11 @@ func isMediaURL(rawURL string) bool {
 // isJSContentType returns true when the content-type indicates a JavaScript file.
 func isJSContentType(ct string) bool {
 	return strings.Contains(normaliseContentType(ct), "javascript")
+}
+
+// isCSSContentType returns true when the content-type indicates a CSS file.
+func isCSSContentType(ct string) bool {
+	return normaliseContentType(ct) == "text/css"
 }
 
 // isMediaContent returns true for any content-type that is not an HTML page.
